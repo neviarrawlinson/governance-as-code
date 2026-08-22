@@ -34,7 +34,7 @@ control:
   validation:
     method: configuration_validation
     frequency: continuous
-    automation_status: planned
+    automation_status: implemented_demo
 
   evidence:
     required:

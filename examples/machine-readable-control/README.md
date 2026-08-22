@@ -18,15 +18,36 @@ The objective is not to replace human-readable policies. A structured control de
 
 **Validation Logic = How the technical environment is evaluated against that requirement**
 
-The YAML defines the governance requirement, not executable validation logic. Its `automation_status: planned` value is intentional because automated validation has not yet been implemented. Its `mappings: []` value is also intentionally empty because framework mappings have not yet been defined. The YAML does not itself mean automated compliance or continuous assurance.
+The YAML defines the governance requirement, not executable validation logic. Its `automation_status: implemented_demo` value indicates that validation exists for this synthetic demonstration; it does not describe production-ready automation. Its `mappings: []` value remains intentionally empty because framework mappings have not yet been defined. The YAML does not itself mean automated compliance or continuous assurance.
 
 ## Synthetic Environment Data
 
 [`sample-data/identity-environment.json`](sample-data/identity-environment.json) represents fictional identity-system data used to demonstrate how a machine-readable governance requirement can eventually be evaluated against technical state.
 
-All accounts and identifiers are synthetic. No production, personal, or organizational identity data is included. The dataset represents technical facts, not governance outcomes, so `PASS`, `FAIL`, and `APPROVED_EXCEPTION` are intentionally not stored in it.
+All accounts and identifiers are synthetic. No production, personal, or organizational identity data is included. The dataset represents technical facts, not governance outcomes, so `PASS`, `FAIL`, `APPROVED_EXCEPTION`, and `NOT_APPLICABLE` are intentionally not stored in it.
 
-Those outcomes will later be determined by validation logic that compares the technical state with [`ACP-001-03.yaml`](controls/ACP-001-03.yaml). Automated validation has not yet been implemented.
+Those outcomes are determined by validation logic that compares the technical state with [`ACP-001-03.yaml`](controls/ACP-001-03.yaml).
+
+## Automated Validation
+
+The validator reads the control's structured scope, evaluates each synthetic account, and returns one of four governance outcomes:
+
+* `PASS` — The account is in scope and MFA is enabled.
+* `FAIL` — The account is in scope, MFA is disabled, and no valid exception applies.
+* `APPROVED_EXCEPTION` — The account is in scope and MFA is disabled, but the documented exception is approved, fully reviewed, and unexpired on the evaluation date.
+* `NOT_APPLICABLE` — The account does not meet any scope condition, so the MFA requirement does not apply.
+
+`APPROVED_EXCEPTION` is a governance outcome rather than a technical bypass. It records that designated risk, security, and governance conditions have been satisfied for a time-bound exception; it does not make MFA technically enabled.
+
+From this directory, install the YAML dependency and run the tests and validator:
+
+```text
+python -m pip install -r requirements.txt
+python -m unittest discover -s validation/tests -v
+python -m validation.cli --evaluation-date 2026-08-22
+```
+
+This implementation evaluates synthetic data only and does not connect to a production identity system. It is an educational demonstration, not production-ready automation or continuous assurance.
 
 ## What We Will Build
 
@@ -36,4 +57,4 @@ Those outcomes will later be determined by validation logic that compares the te
 4. Generate evidence from validation results.
 5. Demonstrate how those results can support continuous assurance.
 
-The control definition is now included. The later validation, evidence, and continuous assurance capabilities are planned but are not implemented yet.
+The control definition and synthetic validation demonstration are now included. Evidence generation and continuous assurance capabilities are planned but are not implemented yet.
