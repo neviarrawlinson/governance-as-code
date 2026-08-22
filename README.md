@@ -27,7 +27,7 @@ The operating model connects three areas:
 
 It demonstrates how business objectives and governance policies can move through version-controlled engineering workflows, continuous validation, monitoring, and evidence collection to support audit-ready governance.
 
-*Governance as Code Operating Model image will be added here.*
+![Governance as Code Operating Model](GaC.png)
 
 ## Published Article
 
