@@ -10,7 +10,7 @@
 | Policy ID        | ACP-001              |
 | Policy Owner     | Information Security |
 | Governance Owner | GRC                  |
-| Version          | 1.0                  |
+| Version          | 1.1                  |
 | Status           | Approved             |
 | Review Frequency | Annual               |
 | Last Reviewed    | 2026-08-22           |
@@ -57,7 +57,9 @@ Users should receive only the permissions necessary to perform their authorized 
 
 ### ACP-001-03: Multifactor Authentication
 
-Multifactor authentication must be enabled for privileged accounts and remote access to organizational systems where technically supported.
+Multifactor authentication must be enabled for privileged accounts, remote access, and access to systems containing sensitive or regulated information.
+
+Exceptions to the multifactor authentication requirement must follow the exception process documented in this policy and include appropriate risk review and approval.
 
 **Control Type:** Preventive
 **Validation Method:** Configuration validation
@@ -129,4 +131,5 @@ These validations can connect policy requirements to technical controls and cont
 
 | Version | Date       | Description                               |
 | ------- | ---------- | ----------------------------------------- |
+| 1.1     | 2026-08-22 | Strengthened multifactor authentication requirements |
 | 1.0     | 2026-08-22 | Initial version-controlled policy example |
