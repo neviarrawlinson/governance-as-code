@@ -52,11 +52,23 @@ The result is a governance artifact with an auditable history rather than a coll
 
 This directory includes a simplified example Access Control Policy:
 
-`access-control-policy.md`
+[View the Access Control Policy](access-control-policy.md)
 
 The example demonstrates how a governance policy can be stored as a version-controlled Markdown document.
 
-Future revisions to the policy can be proposed through commits and pull requests, allowing the repository itself to maintain the history of the governance artifact.
+## Creating an Auditable Governance Trail
+
+Each policy change can begin with a commit that records a focused revision and explains why it was made. The commit history then provides a chronological record of how the policy evolved, including the contributor, date, and change description.
+
+When configured with appropriate review requirements and authorized approvers, pull requests add a governed review layer before a change becomes part of the controlled policy. A pull request can capture:
+
+* The business, regulatory, audit, or risk-based reason for the change
+* The exact policy language added, removed, or revised
+* Discussion between policy owners, control owners, subject matter experts, and reviewers
+* Requested changes and the responses to them
+* Evidence of review and approval before the change is merged
+
+Together, commits and pull requests connect policy decisions to the resulting text. They provide supporting evidence for an auditable governance trail showing what changed, who participated, why the change was accepted, and when it became part of the controlled source of truth. The organization remains responsible for defining approval authority and retaining that evidence according to its governance requirements.
 
 ## Why This Matters for GRC
 
@@ -72,7 +84,3 @@ Version-controlled policy management can support:
 The objective is not simply to move Word documents into GitHub.
 
 The larger goal is to apply the discipline of software configuration management to governance artifacts so that governance changes become controlled, reviewable, traceable, and reproducible.
-
-## Next Example
-
-The next artifact in this directory will demonstrate a simplified Access Control Policy managed as a version-controlled governance artifact.

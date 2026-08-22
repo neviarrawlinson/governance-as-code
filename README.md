@@ -48,6 +48,10 @@ This repository will expand on four practical applications introduced in the art
 3. **Compliance Pipeline Integration**
 4. **Infrastructure as Code for Governance Documentation**
 
+## Explore the Examples
+
+Start with [Version-Controlled Policy Management](examples/version-controlled-policy) to see how a governance policy can be managed as a traceable, reviewable artifact using commits and pull requests.
+
 ## What's Coming
 
 This repository will continue to develop practical Governance as Code examples, including:
