@@ -25,6 +25,7 @@ class ValidationResult:
     username: str
     outcome: str
     reason: str
+    exception_valid: bool | None = None
 
 
 def load_control(path: str | Path) -> dict[str, Any]:
@@ -45,12 +46,18 @@ def _scope_fields(control: dict[str, Any]) -> tuple[str, ...]:
         raise ValueError(f"Unsupported control scope: {error.args[0]}") from error
 
 
-def _result(account: dict[str, Any], outcome: str, reason: str) -> ValidationResult:
+def _result(
+    account: dict[str, Any],
+    outcome: str,
+    reason: str,
+    exception_valid: bool | None = None,
+) -> ValidationResult:
     return ValidationResult(
         account_id=account["account_id"],
         username=account["username"],
         outcome=outcome,
         reason=reason,
+        exception_valid=exception_valid,
     )
 
 
@@ -112,12 +119,14 @@ def evaluate_account(
             account,
             FAIL,
             f"The account is in scope and multifactor authentication is disabled. {exception_failure}",
+            exception_valid=False,
         )
 
     return _result(
         account,
         APPROVED_EXCEPTION,
         "The account is in scope and multifactor authentication is disabled, but its exception is approved, fully reviewed, and unexpired.",
+        exception_valid=True,
     )
 
 

@@ -49,6 +49,26 @@ python -m validation.cli --evaluation-date 2026-08-22
 
 This implementation evaluates synthetic data only and does not connect to a production identity system. It is an educational demonstration, not production-ready automation or continuous assurance.
 
+## Structured Control Validation Evidence
+
+Phase 4A extends the demonstration through this progression:
+
+**Human-Readable Policy → Machine-Readable Control → Technical State → Governance Validation → Structured Control Validation Evidence**
+
+The evidence layer consumes the existing validator results and produces one structured JSON record per evaluated subject. It does not recalculate governance outcomes. Each record preserves the control and policy context, evaluation date, subject, outcome, human-readable reason, source provenance, and relevant exception traceability.
+
+Generate runtime evidence after validation with:
+
+```text
+python -m evidence.cli --evaluation-date 2026-08-22
+```
+
+Records are written to the ignored `generated-evidence/` directory and are not committed as source content. These artifacts support governance traceability, but evidence generation is not the same as evidence retention, and the records are not automatically sufficient audit evidence. This demonstration does not constitute continuous assurance, and evidence integrity verification has not yet been implemented.
+
+### Next Design Layer: Evidence Integrity & Provenance
+
+**Evidence Integrity & Provenance** is the planned Phase 4B design layer. It is not implemented in this change.
+
 ## What We Will Build
 
 1. Define `ACP-001-03` in a structured YAML format.
@@ -57,4 +77,4 @@ This implementation evaluates synthetic data only and does not connect to a prod
 4. Generate evidence from validation results.
 5. Demonstrate how those results can support continuous assurance.
 
-The control definition and synthetic validation demonstration are now included. Evidence generation and continuous assurance capabilities are planned but are not implemented yet.
+The control definition, synthetic validation, and Structured Control Validation Evidence generation are now included. Evidence retention, integrity verification, and continuous assurance capabilities are not implemented.
