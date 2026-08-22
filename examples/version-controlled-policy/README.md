@@ -70,6 +70,23 @@ When configured with appropriate review requirements and authorized approvers, p
 
 Together, commits and pull requests connect policy decisions to the resulting text. They provide supporting evidence for an auditable governance trail showing what changed, who participated, why the change was accepted, and when it became part of the controlled source of truth. The organization remains responsible for defining approval authority and retaining that evidence according to its governance requirements.
 
+## Completed Governance Change Example
+
+This repository includes a completed, simplified example showing how a policy requirement can move through a version-controlled governance workflow. [Pull Request #1: Policy v1.1: Strengthen Multifactor Authentication Requirements](https://github.com/neviarrawlinson/governance-as-code/pull/1) demonstrates:
+
+**Policy Baseline → Proposed Change → Branch → Reviewable Diff → Governance Review → Approval → Merge → Version History**
+
+Readers can inspect Pull Request #1 to see:
+
+* The business and governance rationale for the change
+* The affected control and policy version
+* The exact line-by-line policy diff
+* Validation and evidence considerations
+* The documented governance review outcome
+* The final merge into the approved policy baseline
+
+This example illustrates how software engineering practices can make governance artifacts more traceable and reviewable. GitHub provides the version-control workflow for this demonstration, but it does not by itself constitute a complete enterprise governance or approval system.
+
 ## Why This Matters for GRC
 
 Version-controlled policy management can support:
