@@ -1,0 +1,54 @@
+control:
+  id: ACP-001-03
+  title: Multifactor Authentication
+  version: "1.0"
+  status: approved
+
+  source:
+    policy: Access Control Policy
+    policy_version: "1.1"
+    section: "ACP-001-03: Multifactor Authentication"
+
+  ownership:
+    policy_owner: Information Security
+    governance_owner: GRC
+
+  requirement:
+    statement: >
+      Multifactor authentication must be enabled for privileged accounts,
+      remote access, and access to systems containing sensitive or regulated
+      information.
+    scope:
+      - privileged_accounts
+      - remote_access
+      - sensitive_or_regulated_systems
+
+  risk:
+    objective: >
+      Reduce the risk of unauthorized access resulting from compromised
+      or insufficient authentication credentials.
+    risk_statement: >
+      Accounts protected by a single authentication factor may be more
+      susceptible to unauthorized access if credentials are compromised.
+
+  validation:
+    method: configuration_validation
+    frequency: continuous
+    automation_status: planned
+
+  evidence:
+    required:
+      - authentication_configuration
+      - identity_provider_settings
+      - privileged_access_configuration
+      - approved_exception_records
+
+  exceptions:
+    allowed: true
+    requirements:
+      - documented_business_or_technical_justification
+      - documented_risk_review
+      - governance_and_security_approval
+      - expiration_or_review_date
+
+  mappings: []
