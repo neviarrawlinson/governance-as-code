@@ -20,6 +20,14 @@ The objective is not to replace human-readable policies. A structured control de
 
 The YAML defines the governance requirement, not executable validation logic. Its `automation_status: planned` value is intentional because automated validation has not yet been implemented. Its `mappings: []` value is also intentionally empty because framework mappings have not yet been defined. The YAML does not itself mean automated compliance or continuous assurance.
 
+## Synthetic Environment Data
+
+[`sample-data/identity-environment.json`](sample-data/identity-environment.json) represents fictional identity-system data used to demonstrate how a machine-readable governance requirement can eventually be evaluated against technical state.
+
+All accounts and identifiers are synthetic. No production, personal, or organizational identity data is included. The dataset represents technical facts, not governance outcomes, so `PASS`, `FAIL`, and `APPROVED_EXCEPTION` are intentionally not stored in it.
+
+Those outcomes will later be determined by validation logic that compares the technical state with [`ACP-001-03.yaml`](controls/ACP-001-03.yaml). Automated validation has not yet been implemented.
+
 ## What We Will Build
 
 1. Define `ACP-001-03` in a structured YAML format.

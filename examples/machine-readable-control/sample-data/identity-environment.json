@@ -1,0 +1,68 @@
+{
+  "environment": {
+    "name": "sample_identity_environment",
+    "generated_at": "2026-08-22T12:00:00Z",
+    "data_classification": "synthetic"
+  },
+  "accounts": [
+    {
+      "account_id": "USR-001",
+      "username": "admin@example.test",
+      "privileged": true,
+      "remote_access": false,
+      "sensitive_or_regulated_system_access": false,
+      "mfa_enabled": true,
+      "exception": null
+    },
+    {
+      "account_id": "USR-002",
+      "username": "remote.user@example.test",
+      "privileged": false,
+      "remote_access": true,
+      "sensitive_or_regulated_system_access": false,
+      "mfa_enabled": false,
+      "exception": null
+    },
+    {
+      "account_id": "USR-003",
+      "username": "finance.user@example.test",
+      "privileged": false,
+      "remote_access": false,
+      "sensitive_or_regulated_system_access": true,
+      "mfa_enabled": true,
+      "exception": null
+    },
+    {
+      "account_id": "SVC-001",
+      "username": "service.account@example.test",
+      "privileged": true,
+      "remote_access": false,
+      "sensitive_or_regulated_system_access": false,
+      "mfa_enabled": false,
+      "exception": {
+        "exception_id": "EXC-001",
+        "status": "approved",
+        "risk_review_completed": true,
+        "security_approval": true,
+        "governance_approval": true,
+        "expiration_date": "2026-12-31"
+      }
+    },
+    {
+      "account_id": "USR-004",
+      "username": "legacy.admin@example.test",
+      "privileged": true,
+      "remote_access": false,
+      "sensitive_or_regulated_system_access": false,
+      "mfa_enabled": false,
+      "exception": {
+        "exception_id": "EXC-002",
+        "status": "approved",
+        "risk_review_completed": true,
+        "security_approval": true,
+        "governance_approval": true,
+        "expiration_date": "2026-06-30"
+      }
+    }
+  ]
+}
