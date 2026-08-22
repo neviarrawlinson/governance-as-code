@@ -6,8 +6,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from evidence.generator import (
-    build_evidence_record,
-    generate_evidence_records,
+    build_evidence_record as _build_evidence_record,
+    generate_evidence_records as _generate_evidence_records,
     write_evidence_records,
 )
 from validation.validator import (
@@ -28,6 +28,12 @@ CONTROL_PATH = EXAMPLE_ROOT / "controls" / "ACP-001-03.yaml"
 ENVIRONMENT_PATH = EXAMPLE_ROOT / "sample-data" / "identity-environment.json"
 EVALUATION_DATE = date(2026, 8, 22)
 GENERATED_AT = datetime(2026, 8, 22, 13, 30, tzinfo=timezone.utc)
+INTEGRITY = {
+    "algorithm": "SHA-256",
+    "control_sha256": "control-digest",
+    "environment_sha256": "environment-digest",
+    "validator_sha256": "validator-digest",
+}
 
 CONTROL = {
     "control": {
@@ -64,6 +70,32 @@ def result(outcome, reason="Governance decision reason.", exception_valid=None):
         outcome=outcome,
         reason=reason,
         exception_valid=exception_valid,
+    )
+
+
+def build_evidence_record(
+    control, subject, validation_result, evaluation_date, generated_at
+):
+    return _build_evidence_record(
+        control,
+        subject,
+        validation_result,
+        evaluation_date,
+        generated_at,
+        INTEGRITY,
+    )
+
+
+def generate_evidence_records(
+    control, environment, validation_results, evaluation_date, generated_at
+):
+    return _generate_evidence_records(
+        control,
+        environment,
+        validation_results,
+        evaluation_date,
+        generated_at,
+        INTEGRITY,
     )
 
 

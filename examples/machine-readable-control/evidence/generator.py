@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from evidence.integrity import write_detached_checksum
 from validation.validator import (
     APPROVED_EXCEPTION,
     FAIL,
@@ -37,6 +38,8 @@ def build_evidence_record(
     validation_result: ValidationResult,
     evaluation_date: date,
     generated_at: datetime,
+    integrity: dict[str, str],
+    repository_commit: str | None = None,
     data_classification: str = "synthetic",
 ) -> dict[str, Any]:
     if (
@@ -79,7 +82,11 @@ def build_evidence_record(
             "reason": validation_result.reason,
         },
         "provenance": dict(PROVENANCE),
+        "integrity": dict(integrity),
     }
+
+    if repository_commit is not None:
+        record["provenance"]["repository_commit"] = repository_commit
 
     exception = account.get("exception")
     if isinstance(exception, dict) and validation_result.exception_valid is not None:
@@ -102,6 +109,8 @@ def generate_evidence_records(
     validation_results: list[ValidationResult],
     evaluation_date: date,
     generated_at: datetime,
+    integrity: dict[str, str],
+    repository_commit: str | None = None,
 ) -> list[dict[str, Any]]:
     accounts = environment["accounts"]
     account_ids = [account["account_id"] for account in accounts]
@@ -134,7 +143,9 @@ def generate_evidence_records(
                 validation_result,
                 evaluation_date,
                 generated_at,
-                data_classification,
+                integrity,
+                repository_commit,
+                data_classification=data_classification,
             )
         )
 
@@ -151,5 +162,6 @@ def write_evidence_records(
         with path.open("w", encoding="utf-8", newline="\n") as evidence_file:
             json.dump(record, evidence_file, indent=2)
             evidence_file.write("\n")
+        write_detached_checksum(path)
         paths.append(path)
     return paths

@@ -63,11 +63,25 @@ Generate runtime evidence after validation with:
 python -m evidence.cli --evaluation-date 2026-08-22
 ```
 
-Records are written to the ignored `generated-evidence/` directory and are not committed as source content. These artifacts support governance traceability, but evidence generation is not the same as evidence retention, and the records are not automatically sufficient audit evidence. This demonstration does not constitute continuous assurance, and evidence integrity verification has not yet been implemented.
+Records are written to the ignored `generated-evidence/` directory and are not committed as source content. These artifacts support governance traceability, but evidence generation is not the same as evidence retention, and the records are not automatically sufficient audit evidence. This demonstration does not constitute continuous assurance.
 
-### Next Design Layer: Evidence Integrity & Provenance
+## Evidence Integrity and Provenance
 
-**Evidence Integrity & Provenance** is the planned Phase 4B design layer. It is not implemented in this change.
+Phase 4B extends the demonstration through this progression:
+
+**Policy → Machine-Readable Control → Technical State → Governance Validation → Structured Evidence → Integrity Verification**
+
+SHA-256 hashes bind each evidence record to the exact machine-readable control, synthetic environment input, and validator content referenced during generation. A detached `.sha256` checksum is written beside each JSON record so the complete serialized artifact can be checked for later modification. When Git metadata is available, the evidence provenance also records the repository commit associated with generation.
+
+Verify the generated records and current source files with:
+
+```text
+python -m evidence.verify_cli
+```
+
+Integrity verification reports `VERIFIED` or `MISMATCH` and identifies each mismatched component. Integrity status is separate from the governance outcome: a `PASS` result with `MISMATCH` integrity should not be treated as equivalent to a `PASS` result whose evidence verifies successfully.
+
+Hashing demonstrates integrity checking, not authenticity, trustworthiness, nonrepudiation, or audit sufficiency. A Git commit identifier provides repository-state provenance but does not independently prove artifact authenticity or integrity. This example remains synthetic and educational; evidence retention and continuous assurance have not been implemented.
 
 ## What We Will Build
 
@@ -77,4 +91,4 @@ Records are written to the ignored `generated-evidence/` directory and are not c
 4. Generate evidence from validation results.
 5. Demonstrate how those results can support continuous assurance.
 
-The control definition, synthetic validation, and Structured Control Validation Evidence generation are now included. Evidence retention, integrity verification, and continuous assurance capabilities are not implemented.
+The control definition, synthetic validation, Structured Control Validation Evidence generation, and integrity verification demonstration are now included. Evidence retention and continuous assurance capabilities are not implemented.
