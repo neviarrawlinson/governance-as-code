@@ -83,6 +83,34 @@ Integrity verification reports `VERIFIED` or `MISMATCH` and identifies each mism
 
 Hashing demonstrates integrity checking, not authenticity, trustworthiness, nonrepudiation, or audit sufficiency. A Git commit identifier provides repository-state provenance but does not independently prove artifact authenticity or integrity. This example remains synthetic and educational; evidence retention and continuous assurance have not been implemented.
 
+## Continuous Assurance Decision Model
+
+Phase 5A extends the demonstration through this progression:
+
+**Policy → Machine-Readable Control → Technical State → Governance Validation → Structured Evidence → Integrity Verification → Assurance Decision**
+
+The decision engine consumes existing governance and integrity results and classifies the appropriate assurance action. It does not recalculate control compliance or evidence integrity.
+
+**Governance Outcome** = what the control state is
+
+**Integrity Status** = whether supporting evidence verifies against known provenance
+
+**Assurance Action** = what governance should do with that information
+
+The primary decision matrix is:
+
+| Governance outcome | Integrity status | Assurance action |
+| --- | --- | --- |
+| `PASS` | `VERIFIED` | `RECORD` |
+| `NOT_APPLICABLE` | `VERIFIED` | `RECORD` |
+| `APPROVED_EXCEPTION` | `VERIFIED` | `REVIEW` |
+| `FAIL` | `VERIFIED` | `ESCALATE` |
+| Any governance outcome | `MISMATCH` | `HALT_TRUST` |
+
+When a previous governance outcome is available, the engine also identifies named state transitions such as a new failure, persistent failure, recovery, new approved exception, or stable state. Other valid changes use the generic `<PREVIOUS>_TO_<CURRENT>` form without assigning additional governance significance. A transition never overrides integrity: every `MISMATCH` produces `HALT_TRUST`.
+
+This phase determines an action classification only. It does not send notifications, create tickets or GitHub issues, perform remediation, change technical systems, retain evidence, schedule execution, or constitute a production continuous-assurance platform.
+
 ## What We Will Build
 
 1. Define `ACP-001-03` in a structured YAML format.
@@ -91,4 +119,4 @@ Hashing demonstrates integrity checking, not authenticity, trustworthiness, nonr
 4. Generate evidence from validation results.
 5. Demonstrate how those results can support continuous assurance.
 
-The control definition, synthetic validation, Structured Control Validation Evidence generation, and integrity verification demonstration are now included. Evidence retention and continuous assurance capabilities are not implemented.
+The control definition, synthetic validation, Structured Control Validation Evidence generation, integrity verification, and assurance decision demonstration are now included. Evidence retention and production continuous-assurance capabilities are not implemented.
