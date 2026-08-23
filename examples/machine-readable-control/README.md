@@ -187,6 +187,20 @@ Phase 7B operates in dry-run mode in GitHub Actions. The integration performs re
 
 GitHub Issue creation represents workflow initiation only. It is not governance approval, risk acceptance, remediation authorization, technical remediation, policy approval, or control-owner attestation. This demonstration does not integrate with other workflow platforms or production systems.
 
+## Controlled Live Governance Workflow
+
+Phase 7C adds an explicitly authorized manual path from the existing dry-run plan to live GitHub Issue operations:
+
+**Automated Assurance → Governance Event → Dry-Run Workflow Plan → Explicit Human Authorization → Live Workflow Action**
+
+Push-triggered and scheduled runs remain dry-run only. A manually dispatched run also defaults to dry-run because the boolean `live_issue_workflow` input defaults to `false`. The separate write-capable job can run only when the event is actually `workflow_dispatch`, the input is explicitly set to `true`, and the assurance job has successfully produced the dry-run workflow plan.
+
+The live job downloads the runtime artifact from that assurance run and passes its existing structured governance events to the Phase 7B integration with `--live`. It does not rerun validation, manufacture a failure, or recalculate governance outcomes, integrity status, assurance actions, transitions, event types, or severity. The pipeline must report an authenticated terminal status of `verified` or `integrity_halt`; unexpected execution failures do not authorize dry-run planning or live action. Existing correlation and event markers preserve idempotency for creation, updates, recovery closure, and partial retries.
+
+Permissions remain separated by job. Normal assurance and dry-run processing have `issues: read`; only the explicitly gated live job has `issues: write`. A genuine `INTEGRITY_INCIDENT` can initiate its issue workflow in authorized live mode, while `MISMATCH → HALT_TRUST` still fails assurance execution and prevents trusted-state advancement.
+
+Live issue activity remains workflow initiation, not risk acceptance, remediation authorization, governance approval, policy approval, or control-owner attestation. Enabling the manual input authorizes only the existing bounded `CREATE_ISSUE`, `COMMENT_ISSUE`, `CLOSE_ISSUE`, and `NO_ACTION` behavior.
+
 ## What We Will Build
 
 1. Define `ACP-001-03` in a structured YAML format.
@@ -195,4 +209,4 @@ GitHub Issue creation represents workflow initiation only. It is not governance 
 4. Generate evidence from validation results.
 5. Demonstrate how those results can support continuous assurance.
 
-The control definition, synthetic validation, Structured Control Validation Evidence generation, integrity verification, assurance decision, automated execution, bounded historical comparison, structured governance events, and dry-run GitHub workflow integration are now included. Enterprise state persistence, enterprise evidence retention, live external workflow execution, and production continuous-assurance capabilities are not implemented.
+The control definition, synthetic validation, Structured Control Validation Evidence generation, integrity verification, assurance decision, automated execution, bounded historical comparison, structured governance events, dry-run GitHub workflow planning, and explicitly authorized live GitHub workflow path are now included. Enterprise state persistence, enterprise evidence retention, other external workflow integrations, and production continuous-assurance capabilities are not implemented.

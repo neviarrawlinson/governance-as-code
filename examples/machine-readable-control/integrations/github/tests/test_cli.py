@@ -6,7 +6,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from integrations.github.cli import load_events, parse_args, run_integration
+from integrations.github.cli import (
+    live_execution_authorized,
+    load_events,
+    parse_args,
+    run_integration,
+)
 
 from test_issues import FakeIssueGateway, governance_event
 
@@ -62,6 +67,30 @@ class GitHubIntegrationCliTests(unittest.TestCase):
 
         self.assertTrue(args.dry_run)
 
+    def test_cli_requires_explicit_live_flag_to_enable_writes(self):
+        with patch("sys.argv", ["github-integration", "--live"]):
+            args = parse_args()
+
+        self.assertFalse(args.dry_run)
+
+    def test_explicit_dry_run_flag_remains_read_only(self):
+        with patch("sys.argv", ["github-integration", "--dry-run"]):
+            args = parse_args()
+
+        self.assertTrue(args.dry_run)
+
+    def test_push_context_cannot_authorize_live_execution(self):
+        self.assertFalse(live_execution_authorized("push", "true"))
+
+    def test_schedule_context_cannot_authorize_live_execution(self):
+        self.assertFalse(live_execution_authorized("schedule", "true"))
+
+    def test_manual_false_cannot_authorize_live_execution(self):
+        self.assertFalse(live_execution_authorized("workflow_dispatch", "false"))
+
+    def test_manual_true_explicitly_authorizes_live_execution(self):
+        self.assertTrue(live_execution_authorized("workflow_dispatch", "true"))
+
     def test_empty_events_write_empty_plan_without_gateway_writes(self):
         gateway = FakeIssueGateway()
 
@@ -78,6 +107,23 @@ class GitHubIntegrationCliTests(unittest.TestCase):
         self.assertEqual([], json.loads(self.output_path.read_text(encoding="utf-8")))
         self.assertIn("No GitHub Issue operations proposed", self.summary_path.read_text())
         self.assertEqual([], gateway.writes)
+
+    def test_live_mode_executes_existing_planned_operation(self):
+        self.write_event(governance_event("CONTROL_FAILURE_OPENED"))
+        gateway = FakeIssueGateway()
+
+        with redirect_stdout(StringIO()):
+            operations = run_integration(
+                self.events_directory,
+                self.output_path,
+                gateway,
+                dry_run=False,
+                summary_path=self.summary_path,
+            )
+
+        self.assertEqual("CREATE_ISSUE", operations[0].operation)
+        self.assertEqual(["ensure_labels", "create"], [item[0] for item in gateway.writes])
+        self.assertIn("GitHub Issues Live Execution", self.summary_path.read_text())
 
 
 if __name__ == "__main__":

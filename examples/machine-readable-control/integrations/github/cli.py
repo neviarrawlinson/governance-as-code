@@ -16,6 +16,12 @@ DEFAULT_OUTPUT_PATH = (
 )
 
 
+def live_execution_authorized(
+    event_name: str | None, live_issue_workflow: str | None
+) -> bool:
+    return event_name == "workflow_dispatch" and live_issue_workflow == "true"
+
+
 def load_events(events_directory: Path) -> list[GovernanceEvent]:
     if not events_directory.exists():
         return []
@@ -25,8 +31,15 @@ def load_events(events_directory: Path) -> list[GovernanceEvent]:
     ]
 
 
-def render_summary(operations: list[IssueOperation]) -> str:
-    lines = ["## GitHub Issues Dry-Run Plan", ""]
+def render_summary(
+    operations: list[IssueOperation], *, dry_run: bool
+) -> str:
+    heading = (
+        "GitHub Issues Dry-Run Plan"
+        if dry_run
+        else "GitHub Issues Live Execution"
+    )
+    lines = [f"## {heading}", ""]
     if not operations:
         lines.append("No GitHub Issue operations proposed for this run.")
         return "\n".join(lines) + "\n"
@@ -62,7 +75,7 @@ def run_integration(
         encoding="utf-8",
         newline="\n",
     )
-    summary = render_summary(operations)
+    summary = render_summary(operations, dry_run=dry_run)
     print(summary, end="")
     if summary_path is not None:
         summary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -80,29 +93,45 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--repository", default=os.environ.get("GITHUB_REPOSITORY")
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--dry-run",
+        dest="dry_run",
         action="store_true",
-        default=True,
-        help="Plan issue operations without modifying GitHub (always enabled in Phase 7B).",
+        help="Plan issue operations without modifying GitHub (default).",
     )
+    mode.add_argument(
+        "--live",
+        dest="dry_run",
+        action="store_false",
+        help="Execute approved issue operations; requires explicit workflow authorization.",
+    )
+    parser.set_defaults(dry_run=True)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if not args.dry_run and not live_execution_authorized(
+        os.environ.get("GITHUB_EVENT_NAME"),
+        os.environ.get("LIVE_ISSUE_WORKFLOW"),
+    ):
+        raise SystemExit(
+            "Live execution requires workflow_dispatch and "
+            "LIVE_ISSUE_WORKFLOW=true"
+        )
     if not args.repository:
         raise SystemExit("--repository or GITHUB_REPOSITORY is required")
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if not token:
-        raise SystemExit("GH_TOKEN or GITHUB_TOKEN is required for read-only lookup")
+        raise SystemExit("GH_TOKEN or GITHUB_TOKEN is required for GitHub issue access")
     gateway = GitHubIssueGateway(args.repository, token)
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     run_integration(
         args.events_directory,
         args.output,
         gateway,
-        dry_run=True,
+        dry_run=args.dry_run,
         summary_path=Path(summary_path) if summary_path else None,
     )
 

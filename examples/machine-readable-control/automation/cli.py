@@ -3,7 +3,43 @@ import os
 from datetime import date
 from pathlib import Path
 
-from automation.pipeline import DEFAULT_OUTPUT_DIRECTORY, run_pipeline
+from assurance.decision import HALT_TRUST
+from automation.pipeline import DEFAULT_OUTPUT_DIRECTORY, PipelineRun, run_pipeline
+from evidence.integrity import MISMATCH, VERIFIED
+
+
+VERIFIED_RUN = "verified"
+INTEGRITY_HALT = "integrity_halt"
+
+
+def classify_pipeline_status(result: PipelineRun) -> str:
+    pairs = list(zip(result.integrity_results, result.decisions, strict=True))
+    if result.succeeded and all(
+        integrity.status == VERIFIED for integrity, _ in pairs
+    ):
+        return VERIFIED_RUN
+    mismatches = [
+        (integrity, decision)
+        for integrity, decision in pairs
+        if integrity.status == MISMATCH
+    ]
+    if (
+        not result.succeeded
+        and mismatches
+        and all(
+            decision.assurance_action == HALT_TRUST
+            for _, decision in mismatches
+        )
+    ):
+        return INTEGRITY_HALT
+    raise RuntimeError("Unexpected pipeline terminal state")
+
+
+def _write_pipeline_status(status: str) -> None:
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if github_output:
+        with Path(github_output).open("a", encoding="utf-8", newline="\n") as stream:
+            stream.write(f"assurance_status={status}\n")
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,6 +71,7 @@ def main() -> None:
         args.output_directory,
         previous_state_path=args.previous_state,
     )
+    _write_pipeline_status(classify_pipeline_status(result))
     print(result.summary, end="")
 
     github_summary = os.environ.get("GITHUB_STEP_SUMMARY")

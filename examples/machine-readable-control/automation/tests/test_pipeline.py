@@ -229,6 +229,16 @@ class WorkflowConfigurationTests(unittest.TestCase):
             triggers["push"]["paths"],
         )
 
+    def test_manual_live_input_is_boolean_and_defaults_to_false(self):
+        workflow = self.workflow()
+        live_input = workflow["on"]["workflow_dispatch"]["inputs"][
+            "live_issue_workflow"
+        ]
+
+        self.assertEqual("boolean", live_input["type"])
+        self.assertEqual("true", live_input["required"])
+        self.assertEqual("false", live_input["default"])
+
     def test_workflow_uses_bounded_read_permissions_and_artifact_retention(self):
         workflow = self.workflow()
 
@@ -316,10 +326,93 @@ class WorkflowConfigurationTests(unittest.TestCase):
         self.assertIn("integrations.github.cli --dry-run", integration["run"])
         self.assertEqual("${{ github.token }}", integration["env"]["GH_TOKEN"])
         self.assertEqual(
-            "${{ always() && (steps.assurance-pipeline.outcome == 'success' || steps.assurance-pipeline.outcome == 'failure') }}",
+            "${{ always() && (steps.assurance-pipeline.outputs.assurance_status == 'verified' || steps.assurance-pipeline.outputs.assurance_status == 'integrity_halt') }}",
             integration["if"],
         )
-        self.assertNotIn("issues: write", WORKFLOW_PATH.read_text(encoding="utf-8"))
+        self.assertEqual("read", workflow["permissions"]["issues"])
+        self.assertNotIn(
+            "--live", "\n".join(step.get("run", "") for step in steps)
+        )
+
+    def test_push_and_schedule_paths_cannot_run_write_capable_job(self):
+        workflow = self.workflow()
+        live_job = workflow["jobs"]["live-governance-workflow"]
+
+        self.assertIn(
+            "github.event_name == 'workflow_dispatch'", live_job["if"]
+        )
+        self.assertIn("inputs.live_issue_workflow == true", live_job["if"])
+        self.assertNotIn("push", live_job["if"])
+        self.assertNotIn("schedule", live_job["if"])
+
+    def test_manual_false_cannot_run_write_capable_job(self):
+        workflow = self.workflow()
+        live_job = workflow["jobs"]["live-governance-workflow"]
+
+        self.assertIn("inputs.live_issue_workflow == true", live_job["if"])
+        self.assertNotIn("inputs.live_issue_workflow", live_job.get("env", {}))
+
+    def test_authorized_manual_job_has_bounded_write_permission_and_uses_live_cli(self):
+        workflow = self.workflow()
+        live_job = workflow["jobs"]["live-governance-workflow"]
+        live_step = next(
+            step
+            for step in live_job["steps"]
+            if step["name"] == "Execute authorized GitHub governance workflow"
+        )
+
+        self.assertEqual("assurance", live_job["needs"])
+        self.assertEqual(
+            {"actions": "read", "contents": "read", "issues": "write"},
+            live_job["permissions"],
+        )
+        self.assertIn("integrations.github.cli --live", live_step["run"])
+        self.assertEqual("${{ inputs.live_issue_workflow }}", live_step["env"]["LIVE_ISSUE_WORKFLOW"])
+        write_jobs = [
+            name
+            for name, job in workflow["jobs"].items()
+            if job.get("permissions", {}).get("issues") == "write"
+        ]
+        self.assertEqual(["live-governance-workflow"], write_jobs)
+
+    def test_live_job_consumes_assurance_artifact_only_after_plan_is_ready(self):
+        workflow = self.workflow()
+        assurance = workflow["jobs"]["assurance"]
+        live_job = workflow["jobs"]["live-governance-workflow"]
+        download = next(
+            step
+            for step in live_job["steps"]
+            if step.get("uses", "").startswith("actions/download-artifact@")
+        )
+
+        self.assertEqual(
+            "${{ steps.github-dry-run.outcome == 'success' }}",
+            assurance["outputs"]["workflow_plan_ready"],
+        )
+        self.assertEqual(
+            "${{ steps.assurance-pipeline.outputs.assurance_status }}",
+            assurance["outputs"]["assurance_status"],
+        )
+        self.assertIn(
+            "needs.assurance.outputs.workflow_plan_ready == 'true'",
+            live_job["if"],
+        )
+        self.assertIn(
+            "needs.assurance.outputs.assurance_status == 'verified'",
+            live_job["if"],
+        )
+        self.assertIn(
+            "needs.assurance.outputs.assurance_status == 'integrity_halt'",
+            live_job["if"],
+        )
+        self.assertEqual(
+            "synthetic-governance-assurance-${{ github.run_id }}",
+            download["with"]["name"],
+        )
+        self.assertEqual(
+            "examples/machine-readable-control/generated-assurance",
+            download["with"]["path"],
+        )
 
 
 class PipelineEventIntegrationTests(unittest.TestCase):

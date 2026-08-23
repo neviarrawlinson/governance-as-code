@@ -286,6 +286,23 @@ class SeparateWorkflowTests(unittest.TestCase):
             ("governance-as-code", "integrity-incident"), operation.labels
         )
 
+    def test_live_integrity_incident_uses_existing_event_without_bypassing_semantics(self):
+        event = governance_event(
+            "INTEGRITY_INCIDENT",
+            outcome="PASS",
+            integrity="MISMATCH",
+            action="HALT_TRUST",
+            transition="STABLE_PASS",
+        )
+        gateway = FakeIssueGateway()
+
+        operations = process_events([event], gateway, dry_run=False)
+
+        self.assertEqual([CREATE_ISSUE], [item.operation for item in operations])
+        self.assertIn("MISMATCH", operations[0].body)
+        self.assertIn("HALT_TRUST", operations[0].body)
+        self.assertEqual("create", gateway.writes[-1][0])
+
     def test_repeated_integrity_incident_does_not_duplicate(self):
         event = governance_event(
             "INTEGRITY_INCIDENT",
