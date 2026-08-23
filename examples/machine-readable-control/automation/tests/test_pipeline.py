@@ -221,6 +221,7 @@ class WorkflowConfigurationTests(unittest.TestCase):
                 "examples/machine-readable-control/evidence/**",
                 "examples/machine-readable-control/assurance/**",
                 "examples/machine-readable-control/automation/**",
+                "examples/machine-readable-control/events/**",
                 "examples/machine-readable-control/sample-data/**",
                 ".github/workflows/governance-assurance.yml",
             ],
@@ -290,6 +291,73 @@ class WorkflowConfigurationTests(unittest.TestCase):
         self.assertIn(
             "actions/workflows/governance-assurance.yml/runs", retrieval["run"]
         )
+
+    def test_workflow_runs_event_tests(self):
+        workflow = self.workflow()
+        steps = workflow["jobs"]["assurance"]["steps"]
+        tests = next(step for step in steps if step["name"] == "Run complete test suite")
+
+        self.assertIn("events/tests", tests["run"])
+
+
+class PipelineEventIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = TemporaryDirectory()
+        self.directory = Path(self.temporary_directory.name)
+        self.output_directory = self.directory / "run"
+        self.previous_state_path = self.directory / "previous-state.json"
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+
+    def test_first_run_without_transitions_produces_no_events(self):
+        result = run_pipeline(
+            evaluation_date=EVALUATION_DATE,
+            output_directory=self.output_directory,
+            generated_at=GENERATED_AT,
+        )
+
+        self.assertEqual([], result.events)
+        self.assertEqual([], result.event_paths)
+
+    def test_transition_decisions_produce_runtime_event_files(self):
+        self.previous_state_path.write_text(
+            json.dumps(
+                {
+                    "control_id": "ACP-001-03",
+                    "evaluation_date": "2026-08-21",
+                    "subjects": [
+                        {"subject_id": "USR-001", "governance_outcome": "FAIL"},
+                        {"subject_id": "USR-002", "governance_outcome": "PASS"},
+                        {"subject_id": "SVC-001", "governance_outcome": "PASS"},
+                        {
+                            "subject_id": "USR-004",
+                            "governance_outcome": "APPROVED_EXCEPTION",
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = run_pipeline(
+            evaluation_date=EVALUATION_DATE,
+            output_directory=self.output_directory,
+            generated_at=GENERATED_AT,
+            previous_state_path=self.previous_state_path,
+        )
+
+        self.assertEqual(
+            [
+                "CONTROL_RECOVERY_RECORDED",
+                "CONTROL_FAILURE_OPENED",
+                "EXCEPTION_REVIEW_OPENED",
+                "EXCEPTION_LAPSE_ESCALATION",
+            ],
+            [item.event_type for item in result.events],
+        )
+        self.assertEqual(4, len(result.event_paths))
+        self.assertTrue(all(path.exists() for path in result.event_paths))
 
 
 class HistoricalComparisonTests(unittest.TestCase):

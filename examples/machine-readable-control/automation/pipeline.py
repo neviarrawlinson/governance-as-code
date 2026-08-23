@@ -24,6 +24,7 @@ from evidence.integrity import (
     get_repository_commit,
     verify_evidence,
 )
+from events.generator import GovernanceEvent, generate_events, write_events
 from automation.state import (
     build_trusted_state,
     load_trusted_state,
@@ -74,6 +75,8 @@ class PipelineRun:
     succeeded: bool
     trusted_state_path: Path | None
     missing_subject_ids: list[str]
+    events: list[GovernanceEvent]
+    event_paths: list[Path]
 
 
 def _utc_now() -> datetime:
@@ -252,6 +255,11 @@ def complete_pipeline(
     summary_path = prepared.output_directory / "run-summary.md"
     summary_path.write_text(summary, encoding="utf-8", newline="\n")
 
+    events = generate_events(decisions)
+    event_paths = write_events(
+        events, prepared.output_directory / "events"
+    )
+
     succeeded = all(item.status == VERIFIED for item in integrity_results)
     trusted_state_path = None
     if succeeded:
@@ -271,6 +279,8 @@ def complete_pipeline(
         succeeded=succeeded,
         trusted_state_path=trusted_state_path,
         missing_subject_ids=missing_subject_ids,
+        events=events,
+        event_paths=event_paths,
     )
 
 

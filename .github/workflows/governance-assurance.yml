@@ -8,6 +8,7 @@ on:
       - examples/machine-readable-control/evidence/**
       - examples/machine-readable-control/assurance/**
       - examples/machine-readable-control/automation/**
+      - examples/machine-readable-control/events/**
       - examples/machine-readable-control/sample-data/**
       - .github/workflows/governance-assurance.yml
   workflow_dispatch:
@@ -46,6 +47,7 @@ jobs:
           python -m unittest discover -s evidence/tests -v
           python -m unittest discover -s assurance/tests -v
           python -m unittest discover -s automation/tests -v
+          python -m unittest discover -s events/tests -v
 
       - name: Retrieve prior trusted assurance state
         id: prior-state

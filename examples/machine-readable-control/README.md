@@ -157,6 +157,18 @@ Only a run whose evidence integrity remains `VERIFIED` for every subject may wri
 
 Runtime state remains separate from source-controlled governance definitions and is never committed automatically. For this educational demonstration, GitHub Actions retrieves the newest unexpired trusted-state artifact for the current branch and retains a successfully promoted replacement for 30 days. This bounded artifact mechanism is not an enterprise assurance database or evidence-retention platform.
 
+## Structured Governance Events
+
+Phase 7A translates existing assurance decisions into workflow-neutral structured governance events:
+
+**Assurance Decision → Governance Event → Future Workflow Integration**
+
+The event layer consumes the approved governance outcome, integrity status, assurance action, and transition classification without recalculating them. It creates events for meaningful changes such as new or persistent failures, recoveries, lapsed or newly approved exceptions, and integrity incidents. Integrity incidents take priority over transition-based events.
+
+Stable `PASS`, `APPROVED_EXCEPTION`, and `NOT_APPLICABLE` states do not automatically create new events. This avoids producing duplicate workflow signals when an approved or healthy state has not changed. Runtime event JSON files are written beneath the ignored `generated-assurance/events/` directory and are not committed as source content.
+
+The event layer is intentionally decoupled from external workflow platforms. Phase 7A does not create GitHub Issues, Jira tickets, notifications, or remediation actions; those remain possible future integrations rather than behavior of this demonstration.
+
 ## What We Will Build
 
 1. Define `ACP-001-03` in a structured YAML format.
@@ -165,4 +177,4 @@ Runtime state remains separate from source-controlled governance definitions and
 4. Generate evidence from validation results.
 5. Demonstrate how those results can support continuous assurance.
 
-The control definition, synthetic validation, Structured Control Validation Evidence generation, integrity verification, assurance decision, automated execution, and bounded historical-comparison demonstrations are now included. Enterprise state persistence, enterprise evidence retention, and production continuous-assurance capabilities are not implemented.
+The control definition, synthetic validation, Structured Control Validation Evidence generation, integrity verification, assurance decision, automated execution, bounded historical comparison, and structured governance event demonstrations are now included. Enterprise state persistence, enterprise evidence retention, external workflow integration, and production continuous-assurance capabilities are not implemented.
