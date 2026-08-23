@@ -111,6 +111,38 @@ When a previous governance outcome is available, the engine also identifies name
 
 This phase determines an action classification only. It does not send notifications, create tickets or GitHub issues, perform remediation, change technical systems, retain evidence, schedule execution, or constitute a production continuous-assurance platform.
 
+## Automated Governance Execution
+
+Phase 5B extends the demonstration through this progression:
+
+**Policy → Machine-Readable Control → Technical State → Governance Validation → Structured Evidence → Integrity Verification → Assurance Decision → Automated Execution**
+
+The reusable pipeline runner orchestrates the approved validation, evidence, integrity, and assurance components. It produces one structured assurance decision per synthetic subject and a human-readable run summary with subject-level results and aggregate counts.
+
+Run the pipeline locally with a reproducible evaluation date:
+
+```text
+python -m automation.cli --evaluation-date 2026-08-22
+```
+
+When `--evaluation-date` is omitted, the pipeline uses the current UTC execution date. No previous governance state is assumed or manufactured, so automated runs do not emit transitions until a separately designed trustworthy state mechanism exists.
+
+The GitHub Actions workflow supports three triggers:
+
+* Relevant changes to the machine-readable control, validation, evidence, assurance, automation, sample-data, or workflow implementation.
+* Manual execution through `workflow_dispatch`.
+* Weekly scheduled evaluation every Monday at `06:00 UTC`.
+
+The weekly schedule demonstrates periodic reevaluation of the synthetic environment; it is not production continuous monitoring.
+
+**Governance failure is not pipeline failure.** A verified `FAIL` produces `ESCALATE`, is reported in the summary, and allows execution to complete successfully. A verified approved exception similarly produces `REVIEW` without failing execution.
+
+**Integrity failure is pipeline failure.** Any `MISMATCH` produces `HALT_TRUST`, causes a nonzero pipeline result, and stops reliance on the affected assurance result until the integrity concern is investigated.
+
+Runtime evidence, detached checksums, structured decisions, and summaries are written beneath the ignored `generated-assurance/` directory. GitHub Actions uploads that directory as a clearly named synthetic demonstration artifact with seven-day retention. This bounded artifact storage is not an enterprise evidence-retention system, and no runtime evidence is committed automatically.
+
+This automation is synthetic and educational. It is not production continuous monitoring, automated remediation, a production identity integration, or a deployment mechanism.
+
 ## What We Will Build
 
 1. Define `ACP-001-03` in a structured YAML format.
@@ -119,4 +151,4 @@ This phase determines an action classification only. It does not send notificati
 4. Generate evidence from validation results.
 5. Demonstrate how those results can support continuous assurance.
 
-The control definition, synthetic validation, Structured Control Validation Evidence generation, integrity verification, and assurance decision demonstration are now included. Evidence retention and production continuous-assurance capabilities are not implemented.
+The control definition, synthetic validation, Structured Control Validation Evidence generation, integrity verification, assurance decision, and automated execution demonstrations are now included. Persistent assurance state, enterprise evidence retention, and production continuous-assurance capabilities are not implemented.
