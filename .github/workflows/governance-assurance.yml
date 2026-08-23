@@ -15,7 +15,12 @@ on:
     - cron: "0 6 * * 1"
 
 permissions:
+  actions: read
   contents: read
+
+concurrency:
+  group: governance-assurance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   assurance:
@@ -42,14 +47,53 @@ jobs:
           python -m unittest discover -s assurance/tests -v
           python -m unittest discover -s automation/tests -v
 
+      - name: Retrieve prior trusted assurance state
+        id: prior-state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state_directory="$RUNNER_TEMP/trusted-assurance-state"
+          mkdir -p "$state_directory"
+          workflow_runs="$(gh api -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/governance-assurance.yml/runs" -f branch="$GITHUB_REF_NAME" -f status=success -f per_page=100)"
+          artifacts="$(gh api -X GET "repos/$GITHUB_REPOSITORY/actions/artifacts" -f name=trusted-assurance-state -f per_page=100)"
+          artifact_id="$(jq -nr --argjson runs "$workflow_runs" --argjson artifacts "$artifacts" --argjson run_id "$GITHUB_RUN_ID" '[$runs.workflow_runs[].id] as $trusted_run_ids | [$artifacts.artifacts[] | select(.expired == false and .workflow_run.id != $run_id) | . as $artifact | select($trusted_run_ids | index($artifact.workflow_run.id))] | sort_by(.created_at) | reverse | .[0].id // empty')"
+          if [ -n "$artifact_id" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$state_directory/state.zip"
+            unzip -q "$state_directory/state.zip" -d "$state_directory"
+            echo "path=$state_directory/trusted-assurance-state.json" >> "$GITHUB_OUTPUT"
+            echo "Prior trusted assurance state retrieved."
+          else
+            echo "path=" >> "$GITHUB_OUTPUT"
+            echo "No prior trusted assurance state is available."
+          fi
+
       - name: Run synthetic assurance pipeline
-        run: python -m automation.cli
+        env:
+          PREVIOUS_STATE_PATH: ${{ steps.prior-state.outputs.path }}
+        run: |
+          arguments=()
+          if [ -n "$PREVIOUS_STATE_PATH" ]; then
+            arguments+=(--previous-state "$PREVIOUS_STATE_PATH")
+          fi
+          python -m automation.cli "${arguments[@]}"
 
       - name: Upload synthetic demonstration artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: synthetic-governance-assurance-${{ github.run_id }}
-          path: examples/machine-readable-control/generated-assurance/
+          path: |
+            examples/machine-readable-control/generated-assurance/
+            !examples/machine-readable-control/generated-assurance/trusted-assurance-state.json
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Upload trusted assurance state
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trusted-assurance-state
+          path: examples/machine-readable-control/generated-assurance/trusted-assurance-state.json
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true

@@ -230,11 +230,228 @@ class WorkflowConfigurationTests(unittest.TestCase):
     def test_workflow_uses_read_only_permissions_and_bounded_artifact_retention(self):
         workflow = self.workflow()
 
-        self.assertEqual({"contents": "read"}, workflow["permissions"])
+        self.assertEqual(
+            {"actions": "read", "contents": "read"}, workflow["permissions"]
+        )
         steps = workflow["jobs"]["assurance"]["steps"]
-        upload = next(step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@"))
-        self.assertEqual("7", upload["with"]["retention-days"])
-        self.assertIn("generated-assurance", upload["with"]["path"])
+        uploads = [
+            step
+            for step in steps
+            if step.get("uses", "").startswith("actions/upload-artifact@")
+        ]
+        runtime_upload = next(
+            step for step in uploads if step["with"]["retention-days"] == "7"
+        )
+        state_upload = next(
+            step for step in uploads if step["with"]["retention-days"] == "30"
+        )
+        self.assertIn("generated-assurance", runtime_upload["with"]["path"])
+        self.assertIn(
+            "!examples/machine-readable-control/generated-assurance/trusted-assurance-state.json",
+            runtime_upload["with"]["path"],
+        )
+        self.assertEqual("trusted-assurance-state", state_upload["with"]["name"])
+        self.assertEqual("success()", state_upload["if"])
+
+    def test_workflow_retrieves_state_before_pipeline_execution(self):
+        workflow = self.workflow()
+        steps = workflow["jobs"]["assurance"]["steps"]
+        names = [step["name"] for step in steps]
+
+        self.assertLess(
+            names.index("Retrieve prior trusted assurance state"),
+            names.index("Run synthetic assurance pipeline"),
+        )
+
+    def test_workflow_serializes_state_advancement_and_handles_reruns(self):
+        workflow = self.workflow()
+
+        self.assertEqual(
+            {
+                "group": "governance-assurance-${{ github.workflow }}-${{ github.ref }}",
+                "cancel-in-progress": "false",
+            },
+            workflow["concurrency"],
+        )
+        steps = workflow["jobs"]["assurance"]["steps"]
+        state_upload = next(
+            step
+            for step in steps
+            if step.get("with", {}).get("retention-days") == "30"
+        )
+        self.assertEqual("true", state_upload["with"]["overwrite"])
+        retrieval = next(
+            step
+            for step in steps
+            if step["name"] == "Retrieve prior trusted assurance state"
+        )
+        self.assertIn("GITHUB_RUN_ID", retrieval["run"])
+        self.assertIn("workflow_run.id != $run_id", retrieval["run"])
+        self.assertIn(
+            "actions/workflows/governance-assurance.yml/runs", retrieval["run"]
+        )
+
+
+class HistoricalComparisonTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = TemporaryDirectory()
+        self.directory = Path(self.temporary_directory.name)
+        self.output_directory = self.directory / "run"
+        self.previous_state_path = self.directory / "previous-state.json"
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+
+    def write_previous(self, outcomes):
+        self.previous_state_path.write_text(
+            json.dumps(
+                {
+                    "control_id": "ACP-001-03",
+                    "evaluation_date": "2026-08-21",
+                    "subjects": [
+                        {"subject_id": subject_id, "governance_outcome": outcome}
+                        for subject_id, outcome in outcomes.items()
+                    ],
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def run_with_previous(self, outcomes):
+        self.write_previous(outcomes)
+        return run_pipeline(
+            evaluation_date=EVALUATION_DATE,
+            output_directory=self.output_directory,
+            generated_at=GENERATED_AT,
+            previous_state_path=self.previous_state_path,
+        )
+
+    def transition_for(self, subject_id, previous_outcome):
+        result = self.run_with_previous({subject_id: previous_outcome})
+        return next(
+            item.transition for item in result.decisions if item.subject_id == subject_id
+        )
+
+    def test_first_run_has_no_transitions_and_writes_trusted_state(self):
+        result = run_pipeline(
+            evaluation_date=EVALUATION_DATE,
+            output_directory=self.output_directory,
+            generated_at=GENERATED_AT,
+        )
+
+        self.assertTrue(all(item.transition is None for item in result.decisions))
+        self.assertIsNotNone(result.trusted_state_path)
+        self.assertTrue(result.trusted_state_path.exists())
+
+    def test_pass_to_fail_is_new_control_failure(self):
+        self.assertEqual(
+            "NEW_CONTROL_FAILURE", self.transition_for("USR-002", "PASS")
+        )
+
+    def test_fail_to_fail_is_persistent_control_failure(self):
+        self.assertEqual(
+            "PERSISTENT_CONTROL_FAILURE", self.transition_for("USR-002", "FAIL")
+        )
+
+    def test_fail_to_pass_is_control_recovery(self):
+        self.assertEqual("CONTROL_RECOVERY", self.transition_for("USR-001", "FAIL"))
+
+    def test_approved_exception_to_fail_is_exception_to_failure(self):
+        self.assertEqual(
+            "EXCEPTION_TO_FAILURE",
+            self.transition_for("USR-002", "APPROVED_EXCEPTION"),
+        )
+
+    def test_approved_exception_to_pass_is_exception_to_pass(self):
+        self.assertEqual(
+            "EXCEPTION_TO_PASS",
+            self.transition_for("USR-001", "APPROVED_EXCEPTION"),
+        )
+
+    def test_pass_to_approved_exception_is_new_approved_exception(self):
+        self.assertEqual(
+            "NEW_APPROVED_EXCEPTION", self.transition_for("SVC-001", "PASS")
+        )
+
+    def test_stable_pass_is_classified(self):
+        self.assertEqual("STABLE_PASS", self.transition_for("USR-001", "PASS"))
+
+    def test_stable_approved_exception_is_classified(self):
+        self.assertEqual(
+            "STABLE_APPROVED_EXCEPTION",
+            self.transition_for("SVC-001", "APPROVED_EXCEPTION"),
+        )
+
+    def test_stable_not_applicable_is_delegated_to_decision_engine(self):
+        record = {
+            "subject": {"account_id": "USR-OUT-OF-SCOPE"},
+            "result": {"outcome": "NOT_APPLICABLE"},
+        }
+        verification = IntegrityVerification(VERIFIED, {}, [])
+
+        decision = build_assurance_decision(
+            "ACP-001-03",
+            record,
+            verification,
+            EVALUATION_DATE,
+            previous_governance_outcome="NOT_APPLICABLE",
+        )
+
+        self.assertEqual("STABLE_NOT_APPLICABLE", decision.transition)
+
+    def test_new_subject_has_no_transition(self):
+        result = self.run_with_previous({"USR-002": "FAIL"})
+        decision = next(item for item in result.decisions if item.subject_id == "USR-001")
+
+        self.assertIsNone(decision.previous_governance_outcome)
+        self.assertIsNone(decision.transition)
+
+    def test_missing_prior_subject_is_reported_without_outcome(self):
+        result = self.run_with_previous({"REMOVED-001": "FAIL"})
+
+        self.assertEqual(["REMOVED-001"], result.missing_subject_ids)
+        self.assertIn("REMOVED-001", result.summary)
+        self.assertNotIn("REMOVED-001 | FAIL", result.summary)
+
+    def test_mismatch_prevents_state_update_and_preserves_previous_state(self):
+        self.write_previous({"USR-001": "PASS"})
+        previous_bytes = self.previous_state_path.read_bytes()
+        prepared = prepare_pipeline(
+            EVALUATION_DATE, self.output_directory, GENERATED_AT
+        )
+        prepared.evidence_paths[0].write_text(
+            prepared.evidence_paths[0].read_text(encoding="utf-8") + " ",
+            encoding="utf-8",
+        )
+
+        result = complete_pipeline(prepared, self.previous_state_path)
+
+        self.assertFalse(result.succeeded)
+        self.assertIsNone(result.trusted_state_path)
+        self.assertFalse(
+            (self.output_directory / "trusted-assurance-state.json").exists()
+        )
+        self.assertEqual(previous_bytes, self.previous_state_path.read_bytes())
+
+    def test_runtime_trusted_state_is_ignored_by_git(self):
+        path = EXAMPLE_ROOT / "generated-assurance" / "trusted-assurance-state.json"
+        completed = subprocess.run(
+            [
+                "git",
+                "-c",
+                f"safe.directory={REPOSITORY_ROOT.as_posix()}",
+                "-C",
+                str(REPOSITORY_ROOT),
+                "check-ignore",
+                "--quiet",
+                str(path),
+            ],
+            check=False,
+        )
+
+        self.assertEqual(0, completed.returncode)
 
 
 if __name__ == "__main__":

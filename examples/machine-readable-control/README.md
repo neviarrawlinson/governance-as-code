@@ -143,6 +143,20 @@ Runtime evidence, detached checksums, structured decisions, and summaries are wr
 
 This automation is synthetic and educational. It is not production continuous monitoring, automated remediation, a production identity integration, or a deployment mechanism.
 
+## Trusted Assurance State and Historical Comparison
+
+Phase 6 extends the demonstration through this progression:
+
+**Policy → Machine-Readable Control → Technical State → Validation → Evidence → Integrity → Assurance Decision → Automated Execution → Historical Comparison**
+
+Historical comparison gives governance changes meaning that a single point-in-time result cannot provide. The pipeline can load the most recent prior trusted state, match subjects by stable account ID, and pass each prior outcome into the existing assurance decision engine. This enables classifications such as new failures, persistent failures, recoveries, and changes involving approved exceptions without recreating transition logic in the persistence layer.
+
+The trusted-state artifact contains only the control ID, evaluation date, subject IDs, and governance outcomes. It does not contain evidence records or technical environment details. Subjects newly appearing in the current environment have no prior outcome and therefore no transition. Subjects present only in prior state are listed separately in the run summary without being assigned a governance outcome.
+
+Only a run whose evidence integrity remains `VERIFIED` for every subject may write the next `trusted-assurance-state.json`. If any result is `MISMATCH`, the pipeline produces `HALT_TRUST`, fails execution, and does not replace the prior trusted baseline.
+
+Runtime state remains separate from source-controlled governance definitions and is never committed automatically. For this educational demonstration, GitHub Actions retrieves the newest unexpired trusted-state artifact for the current branch and retains a successfully promoted replacement for 30 days. This bounded artifact mechanism is not an enterprise assurance database or evidence-retention platform.
+
 ## What We Will Build
 
 1. Define `ACP-001-03` in a structured YAML format.
@@ -151,4 +165,4 @@ This automation is synthetic and educational. It is not production continuous mo
 4. Generate evidence from validation results.
 5. Demonstrate how those results can support continuous assurance.
 
-The control definition, synthetic validation, Structured Control Validation Evidence generation, integrity verification, assurance decision, and automated execution demonstrations are now included. Persistent assurance state, enterprise evidence retention, and production continuous-assurance capabilities are not implemented.
+The control definition, synthetic validation, Structured Control Validation Evidence generation, integrity verification, assurance decision, automated execution, and bounded historical-comparison demonstrations are now included. Enterprise state persistence, enterprise evidence retention, and production continuous-assurance capabilities are not implemented.

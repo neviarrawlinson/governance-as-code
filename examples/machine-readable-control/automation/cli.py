@@ -20,12 +20,21 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_OUTPUT_DIRECTORY,
     )
+    parser.add_argument(
+        "--previous-state",
+        type=Path,
+        help="Path to the most recent prior trusted assurance state, when available.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    result = run_pipeline(args.evaluation_date, args.output_directory)
+    result = run_pipeline(
+        args.evaluation_date,
+        args.output_directory,
+        previous_state_path=args.previous_state,
+    )
     print(result.summary, end="")
 
     github_summary = os.environ.get("GITHUB_STEP_SUMMARY")

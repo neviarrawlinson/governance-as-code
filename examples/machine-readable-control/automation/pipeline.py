@@ -18,10 +18,17 @@ from assurance.decision import (
 from evidence.generator import generate_evidence_records, write_evidence_records
 from evidence.integrity import (
     IntegrityVerification,
+    VERIFIED,
     build_source_integrity,
     build_source_integrity_from_bytes,
     get_repository_commit,
     verify_evidence,
+)
+from automation.state import (
+    build_trusted_state,
+    load_trusted_state,
+    previous_outcomes,
+    write_trusted_state,
 )
 from validation.validator import (
     APPROVED_EXCEPTION,
@@ -65,6 +72,8 @@ class PipelineRun:
     summary_path: Path
     summary: str
     succeeded: bool
+    trusted_state_path: Path | None
+    missing_subject_ids: list[str]
 
 
 def _utc_now() -> datetime:
@@ -126,6 +135,7 @@ def _summary(
     control_id: str,
     evaluation_date: date,
     decisions: list[AssuranceDecision],
+    missing_subject_ids: list[str],
 ) -> str:
     governance_counts = Counter(item.governance_outcome for item in decisions)
     action_counts = Counter(item.assurance_action for item in decisions)
@@ -158,6 +168,18 @@ def _summary(
         lines.append(f"| {outcome} | {governance_counts[outcome]} |")
     for action in ASSURANCE_ACTIONS:
         lines.append(f"| {action} | {action_counts[action]} |")
+    if missing_subject_ids:
+        lines.extend(
+            [
+                "",
+                "## Subjects Missing from Current Environment",
+                "",
+                "These subjects existed in the prior trusted state but are absent "
+                "from the current environment. No governance outcome was assigned:",
+                "",
+            ]
+        )
+        lines.extend(f"- `{subject_id}`" for subject_id in missing_subject_ids)
     return "\n".join(lines) + "\n"
 
 
@@ -166,6 +188,7 @@ def build_assurance_decision(
     evidence_record: dict[str, Any],
     integrity_result: IntegrityVerification,
     evaluation_date: date,
+    previous_governance_outcome: str | None = None,
 ) -> AssuranceDecision:
     """Delegate existing evidence and integrity results to the decision engine."""
     return decide_assurance(
@@ -174,13 +197,22 @@ def build_assurance_decision(
         governance_outcome=evidence_record["result"]["outcome"],
         integrity_status=integrity_result.status,
         evaluation_date=evaluation_date,
+        previous_governance_outcome=previous_governance_outcome,
     )
 
 
-def complete_pipeline(prepared: PreparedPipelineRun) -> PipelineRun:
+def complete_pipeline(
+    prepared: PreparedPipelineRun,
+    previous_state_path: Path | None = None,
+) -> PipelineRun:
     integrity_results = []
     decisions = []
     control_id = prepared.control["control"]["id"]
+    prior_outcomes = {}
+    if previous_state_path is not None:
+        prior_outcomes = previous_outcomes(
+            load_trusted_state(previous_state_path, control_id)
+        )
 
     for record, evidence_path in zip(
         prepared.evidence_records, prepared.evidence_paths, strict=True
@@ -195,11 +227,21 @@ def complete_pipeline(prepared: PreparedPipelineRun) -> PipelineRun:
         integrity_results.append(verification)
         decisions.append(
             build_assurance_decision(
-                control_id, record, verification, prepared.evaluation_date
+                control_id,
+                record,
+                verification,
+                prepared.evaluation_date,
+                previous_governance_outcome=prior_outcomes.get(
+                    record["subject"]["account_id"]
+                ),
             )
         )
 
-    summary = _summary(control_id, prepared.evaluation_date, decisions)
+    current_subject_ids = {item.subject_id for item in decisions}
+    missing_subject_ids = sorted(set(prior_outcomes) - current_subject_ids)
+    summary = _summary(
+        control_id, prepared.evaluation_date, decisions, missing_subject_ids
+    )
     prepared.output_directory.mkdir(parents=True, exist_ok=True)
     decisions_path = prepared.output_directory / "assurance-decisions.json"
     decisions_path.write_text(
@@ -210,6 +252,14 @@ def complete_pipeline(prepared: PreparedPipelineRun) -> PipelineRun:
     summary_path = prepared.output_directory / "run-summary.md"
     summary_path.write_text(summary, encoding="utf-8", newline="\n")
 
+    succeeded = all(item.status == VERIFIED for item in integrity_results)
+    trusted_state_path = None
+    if succeeded:
+        trusted_state_path = write_trusted_state(
+            build_trusted_state(control_id, prepared.evaluation_date, decisions),
+            prepared.output_directory / "trusted-assurance-state.json",
+        )
+
     return PipelineRun(
         evaluation_date=prepared.evaluation_date.isoformat(),
         decisions=decisions,
@@ -218,7 +268,9 @@ def complete_pipeline(prepared: PreparedPipelineRun) -> PipelineRun:
         decisions_path=decisions_path,
         summary_path=summary_path,
         summary=summary,
-        succeeded=all(item.assurance_action != HALT_TRUST for item in decisions),
+        succeeded=succeeded,
+        trusted_state_path=trusted_state_path,
+        missing_subject_ids=missing_subject_ids,
     )
 
 
@@ -226,8 +278,9 @@ def run_pipeline(
     evaluation_date: date | None = None,
     output_directory: Path = DEFAULT_OUTPUT_DIRECTORY,
     generated_at: datetime | None = None,
+    previous_state_path: Path | None = None,
 ) -> PipelineRun:
     generated_at = generated_at or _utc_now()
     resolved_date = _evaluation_date(evaluation_date, generated_at)
     prepared = prepare_pipeline(resolved_date, output_directory, generated_at)
-    return complete_pipeline(prepared)
+    return complete_pipeline(prepared, previous_state_path)
