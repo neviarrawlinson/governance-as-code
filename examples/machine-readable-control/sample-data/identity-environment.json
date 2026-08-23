@@ -20,7 +20,7 @@
       "privileged": false,
       "remote_access": true,
       "sensitive_or_regulated_system_access": false,
-      "mfa_enabled": false,
+      "mfa_enabled": true,
       "exception": null
     },
     {

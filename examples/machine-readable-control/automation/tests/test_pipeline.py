@@ -49,7 +49,7 @@ class PipelineIntegrationTests(unittest.TestCase):
         result = self.run_example()
 
         self.assertEqual(
-            ["PASS", "FAIL", "PASS", "APPROVED_EXCEPTION", "FAIL"],
+            ["PASS", "PASS", "PASS", "APPROVED_EXCEPTION", "FAIL"],
             [decision.governance_outcome for decision in result.decisions],
         )
 
@@ -76,7 +76,7 @@ class PipelineIntegrationTests(unittest.TestCase):
         result = self.run_example()
 
         self.assertEqual(
-            [RECORD, ESCALATE, RECORD, REVIEW, ESCALATE],
+            [RECORD, RECORD, RECORD, REVIEW, ESCALATE],
             [decision.assurance_action for decision in result.decisions],
         )
 
@@ -102,7 +102,7 @@ class PipelineIntegrationTests(unittest.TestCase):
             for decision in result.decisions
             if decision.governance_outcome == "FAIL"
         ]
-        self.assertEqual([ESCALATE, ESCALATE], [item.assurance_action for item in failures])
+        self.assertEqual([ESCALATE], [item.assurance_action for item in failures])
         self.assertTrue(result.succeeded)
 
     def test_explicit_evaluation_date_is_honored(self):
@@ -154,8 +154,8 @@ class PipelineIntegrationTests(unittest.TestCase):
         self.assertIn("# Governance Assurance Run Summary", result.summary)
         self.assertIn("USR-002", result.summary)
         self.assertIn("| None |", result.summary)
-        self.assertIn("| FAIL | 2 |", result.summary)
-        self.assertIn("| ESCALATE | 2 |", result.summary)
+        self.assertIn("| FAIL | 1 |", result.summary)
+        self.assertIn("| ESCALATE | 1 |", result.summary)
         self.assertIn("| HALT_TRUST | 0 |", result.summary)
 
     def test_structured_decisions_serialize_and_parse(self):
@@ -435,6 +435,38 @@ class PipelineEventIntegrationTests(unittest.TestCase):
         self.assertEqual([], result.events)
         self.assertEqual([], result.event_paths)
 
+    def test_usr_002_recovery_uses_prior_fail_state_and_records_recovery_event(self):
+        self.previous_state_path.write_text(
+            json.dumps(
+                {
+                    "control_id": "ACP-001-03",
+                    "evaluation_date": "2026-08-21",
+                    "subjects": [
+                        {"subject_id": "USR-002", "governance_outcome": "FAIL"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = run_pipeline(
+            evaluation_date=EVALUATION_DATE,
+            output_directory=self.output_directory,
+            generated_at=GENERATED_AT,
+            previous_state_path=self.previous_state_path,
+        )
+
+        decision = next(
+            item for item in result.decisions if item.subject_id == "USR-002"
+        )
+        self.assertEqual("PASS", decision.governance_outcome)
+        self.assertEqual("FAIL", decision.previous_governance_outcome)
+        self.assertEqual("CONTROL_RECOVERY", decision.transition)
+        self.assertEqual(
+            ["CONTROL_RECOVERY_RECORDED"],
+            [item.event_type for item in result.events],
+        )
+
     def test_transition_decisions_produce_runtime_event_files(self):
         self.previous_state_path.write_text(
             json.dumps(
@@ -465,13 +497,12 @@ class PipelineEventIntegrationTests(unittest.TestCase):
         self.assertEqual(
             [
                 "CONTROL_RECOVERY_RECORDED",
-                "CONTROL_FAILURE_OPENED",
                 "EXCEPTION_REVIEW_OPENED",
                 "EXCEPTION_LAPSE_ESCALATION",
             ],
             [item.event_type for item in result.events],
         )
-        self.assertEqual(4, len(result.event_paths))
+        self.assertEqual(3, len(result.event_paths))
         self.assertTrue(all(path.exists() for path in result.event_paths))
 
 
@@ -530,12 +561,12 @@ class HistoricalComparisonTests(unittest.TestCase):
 
     def test_pass_to_fail_is_new_control_failure(self):
         self.assertEqual(
-            "NEW_CONTROL_FAILURE", self.transition_for("USR-002", "PASS")
+            "NEW_CONTROL_FAILURE", self.transition_for("USR-004", "PASS")
         )
 
     def test_fail_to_fail_is_persistent_control_failure(self):
         self.assertEqual(
-            "PERSISTENT_CONTROL_FAILURE", self.transition_for("USR-002", "FAIL")
+            "PERSISTENT_CONTROL_FAILURE", self.transition_for("USR-004", "FAIL")
         )
 
     def test_fail_to_pass_is_control_recovery(self):
@@ -544,7 +575,7 @@ class HistoricalComparisonTests(unittest.TestCase):
     def test_approved_exception_to_fail_is_exception_to_failure(self):
         self.assertEqual(
             "EXCEPTION_TO_FAILURE",
-            self.transition_for("USR-002", "APPROVED_EXCEPTION"),
+            self.transition_for("USR-004", "APPROVED_EXCEPTION"),
         )
 
     def test_approved_exception_to_pass_is_exception_to_pass(self):

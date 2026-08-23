@@ -379,7 +379,7 @@ class SyntheticEnvironmentEvidenceTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            [PASS, FAIL, PASS, APPROVED_EXCEPTION, FAIL],
+            [PASS, PASS, PASS, APPROVED_EXCEPTION, FAIL],
             [record["result"]["outcome"] for record in records],
         )
         self.assertEqual("EXC-001", records[3]["exception"]["exception_id"])

@@ -184,7 +184,7 @@ class SyntheticEnvironmentIntegrationTests(unittest.TestCase):
         self.assertEqual(
             [
                 ("admin@example.test", PASS),
-                ("remote.user@example.test", FAIL),
+                ("remote.user@example.test", PASS),
                 ("finance.user@example.test", PASS),
                 ("service.account@example.test", APPROVED_EXCEPTION),
                 ("legacy.admin@example.test", FAIL),
