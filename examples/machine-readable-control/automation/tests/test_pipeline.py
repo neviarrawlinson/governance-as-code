@@ -222,18 +222,21 @@ class WorkflowConfigurationTests(unittest.TestCase):
                 "examples/machine-readable-control/assurance/**",
                 "examples/machine-readable-control/automation/**",
                 "examples/machine-readable-control/events/**",
+                "examples/machine-readable-control/integrations/**",
                 "examples/machine-readable-control/sample-data/**",
                 ".github/workflows/governance-assurance.yml",
             ],
             triggers["push"]["paths"],
         )
 
-    def test_workflow_uses_read_only_permissions_and_bounded_artifact_retention(self):
+    def test_workflow_uses_bounded_read_permissions_and_artifact_retention(self):
         workflow = self.workflow()
 
         self.assertEqual(
-            {"actions": "read", "contents": "read"}, workflow["permissions"]
+            {"actions": "read", "contents": "read", "issues": "read"},
+            workflow["permissions"],
         )
+        self.assertNotIn("write", workflow["permissions"].values())
         steps = workflow["jobs"]["assurance"]["steps"]
         uploads = [
             step
@@ -298,6 +301,25 @@ class WorkflowConfigurationTests(unittest.TestCase):
         tests = next(step for step in steps if step["name"] == "Run complete test suite")
 
         self.assertIn("events/tests", tests["run"])
+
+    def test_workflow_runs_github_integration_tests_and_dry_run(self):
+        workflow = self.workflow()
+        steps = workflow["jobs"]["assurance"]["steps"]
+        tests = next(step for step in steps if step["name"] == "Run complete test suite")
+        integration = next(
+            step
+            for step in steps
+            if step["name"] == "Plan GitHub governance workflow operations"
+        )
+
+        self.assertIn("integrations/github/tests", tests["run"])
+        self.assertIn("integrations.github.cli --dry-run", integration["run"])
+        self.assertEqual("${{ github.token }}", integration["env"]["GH_TOKEN"])
+        self.assertEqual(
+            "${{ always() && (steps.assurance-pipeline.outcome == 'success' || steps.assurance-pipeline.outcome == 'failure') }}",
+            integration["if"],
+        )
+        self.assertNotIn("issues: write", WORKFLOW_PATH.read_text(encoding="utf-8"))
 
 
 class PipelineEventIntegrationTests(unittest.TestCase):

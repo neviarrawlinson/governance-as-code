@@ -9,6 +9,7 @@ on:
       - examples/machine-readable-control/assurance/**
       - examples/machine-readable-control/automation/**
       - examples/machine-readable-control/events/**
+      - examples/machine-readable-control/integrations/**
       - examples/machine-readable-control/sample-data/**
       - .github/workflows/governance-assurance.yml
   workflow_dispatch:
@@ -18,6 +19,7 @@ on:
 permissions:
   actions: read
   contents: read
+  issues: read
 
 concurrency:
   group: governance-assurance-${{ github.workflow }}-${{ github.ref }}
@@ -48,6 +50,7 @@ jobs:
           python -m unittest discover -s assurance/tests -v
           python -m unittest discover -s automation/tests -v
           python -m unittest discover -s events/tests -v
+          python -m unittest discover -s integrations/github/tests -v
 
       - name: Retrieve prior trusted assurance state
         id: prior-state
@@ -70,6 +73,7 @@ jobs:
           fi
 
       - name: Run synthetic assurance pipeline
+        id: assurance-pipeline
         env:
           PREVIOUS_STATE_PATH: ${{ steps.prior-state.outputs.path }}
         run: |
@@ -78,6 +82,12 @@ jobs:
             arguments+=(--previous-state "$PREVIOUS_STATE_PATH")
           fi
           python -m automation.cli "${arguments[@]}"
+
+      - name: Plan GitHub governance workflow operations
+        if: ${{ always() && (steps.assurance-pipeline.outcome == 'success' || steps.assurance-pipeline.outcome == 'failure') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -m integrations.github.cli --dry-run
 
       - name: Upload synthetic demonstration artifacts
         if: always()

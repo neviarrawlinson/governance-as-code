@@ -169,6 +169,24 @@ Stable `PASS`, `APPROVED_EXCEPTION`, and `NOT_APPLICABLE` states do not automati
 
 The event layer is intentionally decoupled from external workflow platforms. Phase 7A does not create GitHub Issues, Jira tickets, notifications, or remediation actions; those remain possible future integrations rather than behavior of this demonstration.
 
+## Governance Workflow Integration
+
+Phase 7B extends the demonstration through this progression:
+
+**Policy → Machine-Readable Control → Technical State → Validation → Evidence → Integrity → Assurance Decision → Historical Comparison → Governance Event → Workflow Integration**
+
+The integration follows a deliberately separated flow:
+
+**Governance Event → Workflow Integration → Human Review**
+
+GitHub Issues is the first demonstration workflow target. The dedicated integration consumes existing structured governance events and translates them into proposed issue creation, comment, closure, or no-action operations without recalculating governance outcomes, integrity, assurance actions, transitions, event types, or severity.
+
+Deterministic, category-specific correlation markers support idempotency. Persistent conditions can therefore update an existing workflow rather than create duplicate issues, while control failures, approved-exception reviews, and integrity incidents remain distinct for the same control and subject. A verified recovery can comment on and close an existing correlated control-failure issue; it does not invent or close workflow history when no matching open issue exists. Stable states produce no issue activity.
+
+Phase 7B operates in dry-run mode in GitHub Actions. The integration performs read-only lookup and shows the proposed operations in the workflow summary and an ignored runtime JSON artifact, but it does not create labels or issues, add comments, or close issues. Push, scheduled, and manual workflow triggers all use this same dry-run-only path and receive no `issues: write` permission.
+
+GitHub Issue creation represents workflow initiation only. It is not governance approval, risk acceptance, remediation authorization, technical remediation, policy approval, or control-owner attestation. This demonstration does not integrate with other workflow platforms or production systems.
+
 ## What We Will Build
 
 1. Define `ACP-001-03` in a structured YAML format.
@@ -177,4 +195,4 @@ The event layer is intentionally decoupled from external workflow platforms. Pha
 4. Generate evidence from validation results.
 5. Demonstrate how those results can support continuous assurance.
 
-The control definition, synthetic validation, Structured Control Validation Evidence generation, integrity verification, assurance decision, automated execution, bounded historical comparison, and structured governance event demonstrations are now included. Enterprise state persistence, enterprise evidence retention, external workflow integration, and production continuous-assurance capabilities are not implemented.
+The control definition, synthetic validation, Structured Control Validation Evidence generation, integrity verification, assurance decision, automated execution, bounded historical comparison, structured governance events, and dry-run GitHub workflow integration are now included. Enterprise state persistence, enterprise evidence retention, live external workflow execution, and production continuous-assurance capabilities are not implemented.
