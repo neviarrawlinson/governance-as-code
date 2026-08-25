@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import unittest
 from datetime import date, datetime, timedelta, timezone
@@ -22,6 +23,24 @@ REPOSITORY_ROOT = EXAMPLE_ROOT.parents[1]
 WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "governance-assurance.yml"
 EVALUATION_DATE = date(2026, 8, 22)
 GENERATED_AT = datetime(2026, 8, 22, 15, 0, tzinfo=timezone.utc)
+APPROVED_ACTIONS = {
+    "actions/checkout": (
+        "de0fac2e4500dabe0009e67214ff5f5447ce83dd",
+        "v6.0.2",
+    ),
+    "actions/setup-python": (
+        "a309ff8b426b58ec0e2a45f0f869d46889d02405",
+        "v6.2.0",
+    ),
+    "actions/upload-artifact": (
+        "b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+        "v6.0.0",
+    ),
+    "actions/download-artifact": (
+        "37930b1c2abaa49bbe596cd826c3c89aef350131",
+        "v7.0.0",
+    ),
+}
 
 
 class PipelineIntegrationTests(unittest.TestCase):
@@ -207,6 +226,84 @@ class WorkflowConfigurationTests(unittest.TestCase):
             WORKFLOW_PATH.read_text(encoding="utf-8"),
             Loader=yaml.BaseLoader,
         )
+
+    def action_references(self):
+        references = []
+        pattern = re.compile(
+            r"^\s*-?\s*uses:\s*([^@\s]+)@([^\s#]+)(?:\s+#\s*(\S+))?\s*$"
+        )
+        for line in WORKFLOW_PATH.read_text(encoding="utf-8").splitlines():
+            match = pattern.match(line)
+            if match:
+                references.append(match.groups())
+        return references
+
+    def test_external_actions_use_only_approved_immutable_release_pins(self):
+        references = self.action_references()
+
+        self.assertEqual(10, len(references))
+        for action, reference, release_comment in references:
+            self.assertIn(action, APPROVED_ACTIONS)
+            approved_sha, approved_release = APPROVED_ACTIONS[action]
+            self.assertRegex(reference, r"^[0-9a-f]{40}$")
+            self.assertEqual(approved_sha, reference)
+            self.assertEqual(approved_release, release_comment)
+
+    def test_each_action_uses_one_consistent_approved_sha(self):
+        references = self.action_references()
+
+        for action, (approved_sha, _) in APPROVED_ACTIONS.items():
+            action_references = {
+                reference
+                for referenced_action, reference, _ in references
+                if referenced_action == action
+            }
+            self.assertEqual({approved_sha}, action_references)
+
+    def test_artifact_producer_and_consumer_configuration_is_preserved(self):
+        workflow = self.workflow()
+        assurance_steps = workflow["jobs"]["assurance"]["steps"]
+        live_steps = workflow["jobs"]["live-governance-workflow"]["steps"]
+        publication_steps = workflow["jobs"]["trusted-state-publication"]["steps"]
+        runtime_upload = next(
+            step
+            for step in assurance_steps
+            if step["name"] == "Upload synthetic demonstration artifacts"
+        )
+        live_download = next(
+            step
+            for step in live_steps
+            if step["name"] == "Download generated governance events"
+        )
+        publication_download = next(
+            step
+            for step in publication_steps
+            if step["name"] == "Download candidate trusted state"
+        )
+        state_upload = next(
+            step
+            for step in publication_steps
+            if step["name"] == "Upload trusted assurance state"
+        )
+
+        runtime_name = "synthetic-governance-assurance-${{ github.run_id }}"
+        runtime_path = "examples/machine-readable-control/generated-assurance/"
+        download_path = "examples/machine-readable-control/generated-assurance"
+        self.assertEqual(runtime_name, runtime_upload["with"]["name"])
+        self.assertEqual(runtime_path, runtime_upload["with"]["path"])
+        self.assertEqual("warn", runtime_upload["with"]["if-no-files-found"])
+        self.assertEqual("7", runtime_upload["with"]["retention-days"])
+        for download in (live_download, publication_download):
+            self.assertEqual(runtime_name, download["with"]["name"])
+            self.assertEqual(download_path, download["with"]["path"])
+        self.assertEqual("trusted-assurance-state", state_upload["with"]["name"])
+        self.assertEqual(
+            "${{ runner.temp }}/trusted-state-publication/trusted-assurance-state.json",
+            state_upload["with"]["path"],
+        )
+        self.assertEqual("error", state_upload["with"]["if-no-files-found"])
+        self.assertEqual("30", state_upload["with"]["retention-days"])
+        self.assertEqual("true", state_upload["with"]["overwrite"])
 
     def test_workflow_has_required_triggers_and_path_filters(self):
         workflow = self.workflow()
