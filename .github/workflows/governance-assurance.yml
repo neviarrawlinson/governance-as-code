@@ -68,9 +68,11 @@ jobs:
         run: |
           state_directory="$RUNNER_TEMP/trusted-assurance-state"
           mkdir -p "$state_directory"
-          workflow_runs="$(gh api -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/governance-assurance.yml/runs" -f branch="$GITHUB_REF_NAME" -f status=success -f per_page=100)"
-          artifacts="$(gh api -X GET "repos/$GITHUB_REPOSITORY/actions/artifacts" -f name=trusted-assurance-state -f per_page=100)"
-          artifact_id="$(jq -nr --argjson runs "$workflow_runs" --argjson artifacts "$artifacts" --argjson run_id "$GITHUB_RUN_ID" '[$runs.workflow_runs[].id] as $trusted_run_ids | [$artifacts.artifacts[] | select(.expired == false and .workflow_run.id != $run_id) | . as $artifact | select($trusted_run_ids | index($artifact.workflow_run.id))] | sort_by(.created_at) | reverse | .[0].id // empty')"
+          workflow_runs_file="$RUNNER_TEMP/trusted-state-workflow-runs.json"
+          artifacts_file="$RUNNER_TEMP/trusted-state-artifacts.json"
+          gh api --paginate --slurp -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/governance-assurance.yml/runs" -f branch="$GITHUB_REF_NAME" -f status=success -f per_page=100 > "$workflow_runs_file"
+          gh api --paginate --slurp -X GET "repos/$GITHUB_REPOSITORY/actions/artifacts" -f name=trusted-assurance-state -f per_page=100 > "$artifacts_file"
+          artifact_id="$(jq -nr --slurpfile runs "$workflow_runs_file" --slurpfile artifacts "$artifacts_file" --argjson run_id "$GITHUB_RUN_ID" '[$runs[0][].workflow_runs[].id] as $trusted_run_ids | [$artifacts[0][].artifacts[] | select(.expired == false and .workflow_run.id != $run_id) | . as $artifact | select($trusted_run_ids | index($artifact.workflow_run.id))] | sort_by(.created_at) | reverse | .[0].id // empty')"
           if [ -n "$artifact_id" ]; then
             gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$state_directory/state.zip"
             unzip -q "$state_directory/state.zip" -d "$state_directory"

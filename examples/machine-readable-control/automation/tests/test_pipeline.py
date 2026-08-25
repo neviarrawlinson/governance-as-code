@@ -284,6 +284,25 @@ class WorkflowConfigurationTests(unittest.TestCase):
             names.index("Run synthetic assurance pipeline"),
         )
 
+    def test_trusted_state_retrieval_uses_paginated_file_backed_api_data(self):
+        workflow = self.workflow()
+        retrieval = next(
+            step
+            for step in workflow["jobs"]["assurance"]["steps"]
+            if step["name"] == "Retrieve prior trusted assurance state"
+        )
+        script = retrieval["run"]
+
+        self.assertEqual(2, script.count("gh api --paginate --slurp"))
+        self.assertIn('> "$workflow_runs_file"', script)
+        self.assertIn('> "$artifacts_file"', script)
+        self.assertIn('--slurpfile runs "$workflow_runs_file"', script)
+        self.assertIn('--slurpfile artifacts "$artifacts_file"', script)
+        self.assertNotIn('workflow_runs="$(', script)
+        self.assertNotIn('artifacts="$(', script)
+        self.assertNotIn("--argjson runs", script)
+        self.assertNotIn("--argjson artifacts", script)
+
     def test_workflow_serializes_state_advancement_and_handles_reruns(self):
         workflow = self.workflow()
 
