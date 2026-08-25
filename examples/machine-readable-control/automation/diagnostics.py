@@ -28,7 +28,7 @@ def _utc(value):
 def build_lifecycle_diagnostic(
     *, run, prior_state, assurance_observation, events, proposed_operations,
     executed_operations, workflow_integration, publication,
-    workflow_conclusion, generated_at,
+    workflow_conclusion, generated_at, trusted_history=None,
 ):
     """Aggregate existing facts without calculating lifecycle decisions."""
     decisions = assurance_observation.get("decisions", [])
@@ -81,6 +81,15 @@ def build_lifecycle_diagnostic(
         "generated_at": _utc(generated_at),
         "run": dict(run),
         "prior_state": dict(prior_state),
+        "trusted_history": dict(trusted_history or {
+            "lineage_status": "NOT_REACHED",
+            "status": "NOT_REACHED",
+            "historical_comparison_allowed": False,
+            "issue_operations_allowed": False,
+            "publication_allowed": False,
+            "recovery_required": False,
+            "reason": "Trusted-history resolution metadata is unavailable.",
+        }),
         "evaluation": evaluation,
         "events": {
             "status": "GENERATED" if evaluation["status"] == "COMPLETED" else "NOT_REACHED",
@@ -122,6 +131,7 @@ def _table(title, counts):
 
 def render_lifecycle_summary(data):
     run, prior, evaluation = data["run"], data["prior_state"], data["evaluation"]
+    history = data["trusted_history"]
     integration, publication, result = (
         data["workflow_integration"], data["publication"], data["result"]
     )
@@ -138,6 +148,19 @@ def render_lifecycle_summary(data):
         f"- Artifact ID: {_escape(prior.get('artifact_id'))}",
         f"- Prior evaluation date: {_escape(prior.get('evaluation_date'))}",
         f"- Reason: {_escape(prior.get('reason'))}",
+        "", "## Trusted-History Resolution", "",
+        f"- Lineage status: {_escape(history.get('lineage_status'))}",
+        f"- Resolution status: {_escape(history.get('status'))}",
+        f"- Historical comparison allowed: {str(bool(history.get('historical_comparison_allowed'))).lower()}",
+        f"- Issue operations allowed: {str(bool(history.get('issue_operations_allowed'))).lower()}",
+        f"- Publication allowed: {str(bool(history.get('publication_allowed'))).lower()}",
+        f"- Recovery required: {str(bool(history.get('recovery_required'))).lower()}",
+        f"- Failure stage: {_escape(history.get('failure_stage'))}",
+        f"- Resolved source run: {_escape(history.get('source_run_id'))}",
+        f"- Resolved artifact ID: {_escape(history.get('artifact_id'))}",
+        f"- Resolved evaluation date: {_escape(history.get('prior_evaluation_date'))}",
+        f"- Observation mode: {'Historical comparison' if history.get('historical_comparison_allowed') else 'Point-in-time evaluation only'}",
+        f"- Reason: {_escape(history.get('reason'))}",
         "", "## Current Evaluation", "",
         f"- Status: {_escape(evaluation.get('status'))}",
         f"- Evaluation date: {_escape(evaluation.get('evaluation_date'))}",
@@ -208,10 +231,19 @@ def write_assurance_observation(result, status, path):
             getattr(result, "missing_subject_ids", [])
         ),
         "assurance_status": status,
-        "failure_stage": "EVIDENCE_INTEGRITY" if status == "integrity_halt" else None,
+        "failure_stage": (
+            "EVIDENCE_INTEGRITY"
+            if status == "integrity_halt"
+            else "TRUSTED_HISTORY_RESOLUTION"
+            if status == "history_unresolved"
+            else None
+        ),
         "failure_reason": (
             "Evidence integrity returned MISMATCH."
-            if status == "integrity_halt" else None
+            if status == "integrity_halt"
+            else "Authoritative trusted history could not be established."
+            if status == "history_unresolved"
+            else None
         ),
     }, path)
 
@@ -269,12 +301,24 @@ def main():
             "status": "NOT_REACHED",
             "failure_stage": (
                 "PRIOR_STATE_RETRIEVAL"
-                if prior.get("status") == "RETRIEVAL_FAILED"
+                if prior.get("status") == "UNAVAILABLE"
                 else "ASSURANCE_EXECUTION"
             ),
             "failure_reason": prior.get(
                 "reason", "Assurance observation is unavailable."
             ),
+        },
+    )
+    trusted_history = _read(
+        runtime / "trusted-state-resolution.json",
+        {
+            "lineage_status": "NOT_REACHED",
+            "status": "NOT_REACHED",
+            "historical_comparison_allowed": False,
+            "issue_operations_allowed": False,
+            "publication_allowed": False,
+            "recovery_required": False,
+            "reason": "Trusted-history resolution metadata is unavailable.",
         },
     )
     try:
@@ -310,6 +354,7 @@ def main():
         },
         workflow_conclusion=args.workflow_conclusion,
         generated_at=datetime.now(timezone.utc),
+        trusted_history=trusted_history,
     )
     args.output_directory.mkdir(parents=True, exist_ok=True)
     write_diagnostic(

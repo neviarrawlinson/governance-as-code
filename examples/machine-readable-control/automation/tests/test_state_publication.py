@@ -15,6 +15,21 @@ from automation.state_publication import (
 
 
 class TrustedStatePublicationPolicyTests(unittest.TestCase):
+    def test_unresolved_trusted_history_explicitly_prohibits_publication(self):
+        decision = decide_state_publication(
+            assurance_status="verified",
+            event_name="schedule",
+            live_requested=False,
+            live_job_result="skipped",
+            governance_events_present=False,
+            trusted_history_publication_allowed=False,
+        )
+
+        self.assertFalse(decision.advance)
+        self.assertEqual(
+            "Trusted history is unresolved for an established lineage; recovery is required before publication.",
+            decision.reason,
+        )
     def test_dry_run_with_events_does_not_advance_trusted_state(self):
         decision = decide_state_publication(
             assurance_status="verified",
@@ -126,7 +141,15 @@ class CandidateStatePublicationTests(unittest.TestCase):
 
 
 class StatePublicationCliTests(unittest.TestCase):
-    def run_cli(self, *, event_name, live_requested, live_job_result, with_event):
+    def run_cli(
+        self,
+        *,
+        event_name,
+        live_requested,
+        live_job_result,
+        with_event,
+        history_allowed="true",
+    ):
         with TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             candidate = directory / "candidate" / "trusted-assurance-state.json"
@@ -152,6 +175,8 @@ class StatePublicationCliTests(unittest.TestCase):
                     live_requested,
                     "--live-job-result",
                     live_job_result,
+                    "--trusted-history-publication-allowed",
+                    history_allowed,
                     "--events-directory",
                     str(events),
                     "--candidate-state",
@@ -167,6 +192,21 @@ class StatePublicationCliTests(unittest.TestCase):
             output = github_output.read_text(encoding="utf-8")
             state_exists = (published / "trusted-assurance-state.json").exists()
             return completed, output, state_exists
+
+    def test_unresolved_history_cli_withholds_candidate_with_dedicated_reason(self):
+        completed, output, state_exists = self.run_cli(
+            event_name="schedule",
+            live_requested="false",
+            live_job_result="skipped",
+            with_event=False,
+            history_allowed="false",
+        )
+
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertIn("state_ready=false", output)
+        self.assertIn("publication_decision=DO_NOT_PROMOTE", output)
+        self.assertIn("recovery is required before publication", output)
+        self.assertFalse(state_exists)
 
     def test_dry_run_cli_withholds_candidate_when_event_is_pending(self):
         completed, output, state_exists = self.run_cli(

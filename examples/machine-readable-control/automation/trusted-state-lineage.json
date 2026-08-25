@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "control_id": "ACP-001-03",
+  "lineage_id": "ACP-001-03-synthetic-assurance",
+  "lineage_status": "ESTABLISHED",
+  "authoritative_state_previously_established": true,
+  "first_authoritative_run_id": "32799613802",
+  "first_authoritative_artifact_id": "9546047131",
+  "first_evaluation_date": "2026-08-22"
+}

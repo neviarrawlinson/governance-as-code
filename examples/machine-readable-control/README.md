@@ -122,10 +122,12 @@ The reusable pipeline runner orchestrates the approved validation, evidence, int
 Run the pipeline locally with a reproducible evaluation date:
 
 ```text
-python -m automation.cli --evaluation-date 2026-08-22
+python -m automation.cli --evaluation-date 2026-08-22 \
+  --state-resolution generated-assurance/trusted-state-resolution.json \
+  --previous-state /path/to/trusted-assurance-state.json
 ```
 
-When `--evaluation-date` is omitted, the pipeline uses the current UTC execution date. No previous governance state is assumed or manufactured, so automated runs do not emit transitions until a separately designed trustworthy state mechanism exists.
+When `--evaluation-date` is omitted, the pipeline uses the current UTC execution date. The workflow creates the required trusted-history resolution handoff before invoking this command. A prior state path is supplied only when that resolution confirms an eligible, valid authoritative baseline; history is never inferred from artifact absence.
 
 The GitHub Actions workflow supports three triggers:
 
@@ -156,6 +158,16 @@ The trusted-state artifact contains only the control ID, evaluation date, subjec
 Only a run whose evidence integrity remains `VERIFIED` for every subject may produce a candidate `trusted-assurance-state.json`. A dry-run that generates governance events does not promote that candidate, because doing so would consume transitions before an authorized workflow can process them. A verified dry-run with no governance events may advance the baseline. When live issue processing is explicitly authorized, the candidate becomes authoritative only after the live workflow completes successfully. If any result is `MISMATCH`, the pipeline produces `HALT_TRUST`, fails execution, and does not replace the prior trusted baseline.
 
 Runtime state remains separate from source-controlled governance definitions and is never committed automatically. For this educational demonstration, GitHub Actions retrieves the newest unexpired trusted-state artifact for the current branch and retains a successfully promoted replacement for 30 days. This bounded artifact mechanism is not an enterprise assurance database or evidence-retention platform.
+
+## Trusted-State Lineage and Fail-Closed Resolution
+
+Phase 8C-1 adds a source-controlled lineage declaration for `ACP-001-03` so GitHub Actions artifact absence cannot be mistaken for proof that the control has never had authoritative history. The declaration records an `ESTABLISHED` lineage anchored to the production-verified Run #14 state (run `32799613802`, artifact `9546047131`, evaluation date `2026-08-22`). Artifact presence or absence cannot change that declaration.
+
+Retrieval now reports raw conditions separately from their governance interpretation. The resolution layer distinguishes a valid state from absence, detectable expiration, retrieval or download unavailability, invalid state content, ineligible provenance, and a resolution stage that was not reached. The existing version 1 trusted-state structure remains supported; Phase 8C-1 does not require historical artifacts to contain metadata that did not exist when they were published.
+
+For this established lineage, unresolved history fails closed. Current validation, evidence generation, and integrity verification may still produce a point-in-time observation, but the run does not claim historical transitions, does not generate history-dependent governance events, cannot reach GitHub Issue writes, cannot promote a replacement trusted state, and reports that explicit recovery is required. Evidence-integrity failure remains a separate condition from trusted-history resolution failure.
+
+This phase does not provide bootstrap, restoration, re-baselining, retention changes, a version 2 state schema, publication receipts, or cryptographic provenance. The trusted-state artifact retains its existing 30-day retention; recovery execution will be designed separately.
 
 ## Structured Governance Events
 

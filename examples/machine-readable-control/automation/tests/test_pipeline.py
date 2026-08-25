@@ -411,6 +411,64 @@ class WorkflowConfigurationTests(unittest.TestCase):
         self.assertNotIn("--argjson runs", script)
         self.assertNotIn("--argjson artifacts", script)
 
+    def test_retrieval_classifies_raw_state_without_inferring_first_run(self):
+        workflow = self.workflow()
+        steps = workflow["jobs"]["assurance"]["steps"]
+        retrieval = next(
+            step for step in steps
+            if step["name"] == "Retrieve prior trusted assurance state"
+        )
+        resolution = next(
+            step for step in steps
+            if step["name"] == "Resolve trusted assurance history"
+        )
+
+        for status in ("FOUND", "ABSENT", "EXPIRED", "UNAVAILABLE", "INELIGIBLE"):
+            self.assertIn(status, retrieval["run"])
+        self.assertNotIn("NOT_FOUND", retrieval["run"])
+        self.assertIn("automation.state_resolution", resolution["run"])
+        self.assertIn("trusted-state-lineage.json", resolution["run"])
+        self.assertLess(
+            [step["name"] for step in steps].index("Resolve trusted assurance history"),
+            [step["name"] for step in steps].index("Run synthetic assurance pipeline"),
+        )
+
+    def test_newest_artifact_selection_has_deterministic_id_tie_breaker(self):
+        retrieval = next(
+            step
+            for step in self.workflow()["jobs"]["assurance"]["steps"]
+            if step["name"] == "Retrieve prior trusted assurance state"
+        )
+
+        self.assertIn("sort_by([.created_at, .id])", retrieval["run"])
+
+    def test_unresolved_history_cannot_reach_issue_writes_or_publication(self):
+        workflow = self.workflow()
+        assurance = workflow["jobs"]["assurance"]
+        live = workflow["jobs"]["live-governance-workflow"]
+        publication = workflow["jobs"]["trusted-state-publication"]
+        publication_step = next(
+            step for step in publication["steps"]
+            if step["name"] == "Evaluate trusted state publication"
+        )
+
+        self.assertEqual(
+            "${{ steps.trusted-history.outputs.issue_operations_allowed }}",
+            assurance["outputs"]["issue_operations_allowed"],
+        )
+        self.assertIn(
+            "needs.assurance.outputs.issue_operations_allowed == 'true'",
+            live["if"],
+        )
+        self.assertIn(
+            "--trusted-history-publication-allowed",
+            publication_step["run"],
+        )
+        self.assertIn(
+            "needs.assurance.outputs.publication_allowed",
+            publication_step["run"],
+        )
+
     def test_workflow_serializes_state_advancement_and_handles_reruns(self):
         workflow = self.workflow()
 
@@ -485,7 +543,7 @@ class WorkflowConfigurationTests(unittest.TestCase):
         self.assertIn("integrations.github.cli --dry-run", integration["run"])
         self.assertEqual("${{ github.token }}", integration["env"]["GH_TOKEN"])
         self.assertEqual(
-            "${{ always() && (steps.assurance-pipeline.outputs.assurance_status == 'verified' || steps.assurance-pipeline.outputs.assurance_status == 'integrity_halt') }}",
+            "${{ always() && steps.trusted-history.outputs.issue_operations_allowed == 'true' && (steps.assurance-pipeline.outputs.assurance_status == 'verified' || steps.assurance-pipeline.outputs.assurance_status == 'integrity_halt') }}",
             integration["if"],
         )
         self.assertEqual("read", workflow["permissions"]["issues"])
@@ -699,6 +757,24 @@ class PipelineEventIntegrationTests(unittest.TestCase):
         self.assertEqual(3, len(result.event_paths))
         self.assertTrue(all(path.exists() for path in result.event_paths))
 
+    def test_unresolved_history_retains_observations_without_historical_claims(self):
+        result = run_pipeline(
+            evaluation_date=EVALUATION_DATE,
+            output_directory=self.output_directory,
+            generated_at=GENERATED_AT,
+            historical_comparison_allowed=False,
+            candidate_state_allowed=False,
+        )
+
+        self.assertEqual(
+            ["PASS", "PASS", "PASS", "APPROVED_EXCEPTION", "FAIL"],
+            [item.governance_outcome for item in result.decisions],
+        )
+        self.assertTrue(all(item.transition is None for item in result.decisions))
+        self.assertEqual([], result.events)
+        self.assertIsNone(result.trusted_state_path)
+        self.assertFalse(result.historical_comparison_allowed)
+
 
 class HistoricalComparisonTests(unittest.TestCase):
     def setUp(self):
@@ -752,6 +828,32 @@ class HistoricalComparisonTests(unittest.TestCase):
         self.assertTrue(all(item.transition is None for item in result.decisions))
         self.assertIsNotNone(result.trusted_state_path)
         self.assertTrue(result.trusted_state_path.exists())
+
+    def test_healthy_authoritative_history_preserves_stable_production_behavior(self):
+        result = self.run_with_previous(
+            {
+                "USR-001": "PASS",
+                "USR-002": "PASS",
+                "USR-003": "PASS",
+                "SVC-001": "APPROVED_EXCEPTION",
+                "USR-004": "FAIL",
+            }
+        )
+
+        self.assertEqual(
+            [
+                "STABLE_PASS",
+                "STABLE_PASS",
+                "STABLE_PASS",
+                "STABLE_APPROVED_EXCEPTION",
+                "PERSISTENT_CONTROL_FAILURE",
+            ],
+            [item.transition for item in result.decisions],
+        )
+        self.assertEqual(
+            ["CONTROL_FAILURE_CONTINUES"],
+            [item.event_type for item in result.events],
+        )
 
     def test_pass_to_fail_is_new_control_failure(self):
         self.assertEqual(

@@ -79,6 +79,29 @@ class TrustedStateSchemaTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Duplicate subject"):
                 load_trusted_state(path, "ACP-001-03")
 
+    def test_state_rejects_evaluation_date_after_current_evaluation(self):
+        with TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "trusted-assurance-state.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "control_id": "ACP-001-03",
+                        "evaluation_date": "2026-08-23",
+                        "subjects": [
+                            {"subject_id": "USR-001", "governance_outcome": "PASS"}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "after the current evaluation"):
+                load_trusted_state(
+                    path,
+                    "ACP-001-03",
+                    current_evaluation_date=date(2026, 8, 22),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

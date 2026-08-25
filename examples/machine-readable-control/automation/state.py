@@ -30,15 +30,26 @@ def build_trusted_state(
     }
 
 
-def _validate_state(state: object, expected_control_id: str) -> dict[str, Any]:
+def _validate_state(
+    state: object,
+    expected_control_id: str,
+    current_evaluation_date: date | None = None,
+) -> dict[str, Any]:
     if not isinstance(state, dict) or set(state) != STATE_KEYS:
         raise ValueError("Trusted state has an invalid structure")
     if state["control_id"] != expected_control_id:
         raise ValueError("Trusted state control ID does not match the current control")
     try:
-        date.fromisoformat(state["evaluation_date"])
+        state_evaluation_date = date.fromisoformat(state["evaluation_date"])
     except (TypeError, ValueError) as error:
         raise ValueError("Trusted state has an invalid evaluation date") from error
+    if (
+        current_evaluation_date is not None
+        and state_evaluation_date > current_evaluation_date
+    ):
+        raise ValueError(
+            "Trusted state evaluation date is after the current evaluation date"
+        )
     if not isinstance(state["subjects"], list):
         raise ValueError("Trusted state subjects must be a list")
 
@@ -57,12 +68,16 @@ def _validate_state(state: object, expected_control_id: str) -> dict[str, Any]:
     return state
 
 
-def load_trusted_state(path: Path, expected_control_id: str) -> dict[str, Any]:
+def load_trusted_state(
+    path: Path,
+    expected_control_id: str,
+    current_evaluation_date: date | None = None,
+) -> dict[str, Any]:
     try:
         state = json.loads(path.read_bytes())
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ValueError(f"Unable to load trusted state: {path}") from error
-    return _validate_state(state, expected_control_id)
+    return _validate_state(state, expected_control_id, current_evaluation_date)
 
 
 def previous_outcomes(state: dict[str, Any]) -> dict[str, str]:

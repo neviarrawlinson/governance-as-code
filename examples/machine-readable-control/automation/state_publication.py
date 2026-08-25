@@ -38,7 +38,14 @@ def decide_state_publication(
     live_requested: bool,
     live_job_result: str,
     governance_events_present: bool,
+    trusted_history_publication_allowed: bool = True,
 ) -> StatePublicationDecision:
+    if not trusted_history_publication_allowed:
+        return StatePublicationDecision(
+            False,
+            "Trusted history is unresolved for an established lineage; "
+            "recovery is required before publication.",
+        )
     if assurance_status != VERIFIED_RUN:
         return StatePublicationDecision(
             False, "Only a VERIFIED assurance run may advance trusted state."
@@ -77,6 +84,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--event-name", required=True)
     parser.add_argument("--live-requested", required=True)
     parser.add_argument("--live-job-result", required=True)
+    parser.add_argument("--trusted-history-publication-allowed", required=True)
     parser.add_argument("--events-directory", type=Path, required=True)
     parser.add_argument("--candidate-state", type=Path, required=True)
     parser.add_argument("--publication-directory", type=Path, required=True)
@@ -112,6 +120,9 @@ def main() -> None:
         live_job_result=args.live_job_result,
         governance_events_present=governance_events_present(
             args.events_directory
+        ),
+        trusted_history_publication_allowed=(
+            args.trusted_history_publication_allowed == "true"
         ),
     )
     candidate_state_available = args.candidate_state.exists()

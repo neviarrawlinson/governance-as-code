@@ -9,14 +9,21 @@ from automation.diagnostics import (
     write_failure_observation,
 )
 from automation.pipeline import DEFAULT_OUTPUT_DIRECTORY, PipelineRun, run_pipeline
+from automation.state_resolution import load_state_resolution
 from evidence.integrity import MISMATCH, VERIFIED
 
 
 VERIFIED_RUN = "verified"
 INTEGRITY_HALT = "integrity_halt"
+HISTORY_UNRESOLVED = "history_unresolved"
 
 
-def classify_pipeline_status(result: PipelineRun) -> str:
+def classify_pipeline_status(
+    result: PipelineRun,
+    trusted_history_resolved: bool = True,
+) -> str:
+    if not trusted_history_resolved:
+        return HISTORY_UNRESOLVED
     pairs = list(zip(result.integrity_results, result.decisions, strict=True))
     if result.succeeded and all(
         integrity.status == VERIFIED for integrity, _ in pairs
@@ -73,17 +80,36 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Path to the most recent prior trusted assurance state, when available.",
     )
+    parser.add_argument(
+        "--state-resolution",
+        type=Path,
+        required=True,
+        help="Path to the trusted-history resolution produced before evaluation.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     observation_path = args.output_directory / "assurance-observation.json"
+    resolution = load_state_resolution(args.state_resolution)
+    if resolution.historical_comparison_allowed and args.previous_state is None:
+        raise RuntimeError(
+            "Resolved trusted history requires a prior trusted-state path"
+        )
     try:
         result = run_pipeline(
             args.evaluation_date,
             args.output_directory,
-            previous_state_path=args.previous_state,
+            previous_state_path=(
+                args.previous_state
+                if resolution.historical_comparison_allowed
+                else None
+            ),
+            historical_comparison_allowed=(
+                resolution.historical_comparison_allowed
+            ),
+            candidate_state_allowed=resolution.publication_allowed,
         )
     except Exception as error:
         _attempt_observation(
@@ -94,7 +120,10 @@ def main() -> None:
         )
         raise
 
-    status = classify_pipeline_status(result)
+    status = classify_pipeline_status(
+        result,
+        trusted_history_resolved=resolution.historical_comparison_allowed,
+    )
     _attempt_observation(
         write_assurance_observation,
         result,
@@ -109,7 +138,7 @@ def main() -> None:
         with Path(github_summary).open("a", encoding="utf-8", newline="\n") as summary_file:
             summary_file.write(result.summary)
 
-    if not result.succeeded:
+    if not result.succeeded or status == HISTORY_UNRESOLVED:
         raise SystemExit(1)
 
 

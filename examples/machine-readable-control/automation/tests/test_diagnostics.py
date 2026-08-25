@@ -49,6 +49,20 @@ class LifecycleDiagnosticTests(unittest.TestCase):
                 "artifact_name": "trusted-assurance-state",
                 "evaluation_date": "2026-08-22", "reason": "Newest eligible state.",
             },
+            "trusted_history": {
+                "lineage_id": "ACP-001-03-synthetic-assurance",
+                "lineage_status": "ESTABLISHED",
+                "status": "FOUND",
+                "historical_comparison_allowed": True,
+                "issue_operations_allowed": True,
+                "publication_allowed": True,
+                "recovery_required": False,
+                "reason": "Authoritative trusted history was found and validated.",
+                "source_run_id": "32799613802",
+                "artifact_id": "9546047131",
+                "artifact_name": "trusted-assurance-state",
+                "prior_evaluation_date": "2026-08-22",
+            },
             "assurance_observation": {
                 "status": "COMPLETED", "evaluation_date": "2026-08-25",
                 "candidate_state_evaluation_date": "2026-08-25",
@@ -97,17 +111,17 @@ class LifecycleDiagnosticTests(unittest.TestCase):
             (prior["status"], prior["source_run_id"], prior["artifact_id"], prior["evaluation_date"]),
         )
 
-    def test_not_found_and_retrieval_failed_are_distinct(self):
-        first = self.diagnostic(prior_state={"status": "NOT_FOUND", "reason": "No state."})
+    def test_absent_and_unavailable_are_distinct(self):
+        first = self.diagnostic(prior_state={"status": "ABSENT", "reason": "No state."})
         failed = self.diagnostic(
-            prior_state={"status": "RETRIEVAL_FAILED", "reason": "Download failed."},
+            prior_state={"status": "UNAVAILABLE", "reason": "Download failed."},
             assurance_observation={"status": "NOT_REACHED", "failure_stage": "PRIOR_STATE_RETRIEVAL", "failure_reason": "Download failed."},
             events=[], proposed_operations=[],
             publication={"status": "NOT_REACHED", "decision": None, "reason": None},
             workflow_conclusion="failure",
         )
-        self.assertEqual("NOT_FOUND", first["prior_state"]["status"])
-        self.assertEqual("RETRIEVAL_FAILED", failed["prior_state"]["status"])
+        self.assertEqual("ABSENT", first["prior_state"]["status"])
+        self.assertEqual("UNAVAILABLE", failed["prior_state"]["status"])
         self.assertEqual("PRIOR_STATE_RETRIEVAL", failed["result"]["failed_stage"])
         self.assertEqual("NOT_REACHED", failed["evaluation"]["status"])
 
@@ -289,13 +303,70 @@ class LifecycleDiagnosticTests(unittest.TestCase):
         ):
             self.assertIn(heading, summary)
 
+    def test_unresolved_history_is_separate_from_point_in_time_evaluation(self):
+        data = self.diagnostic(
+            trusted_history={
+                "lineage_id": "ACP-001-03-synthetic-assurance",
+                "lineage_status": "ESTABLISHED",
+                "status": "ABSENT",
+                "historical_comparison_allowed": False,
+                "issue_operations_allowed": False,
+                "publication_allowed": False,
+                "recovery_required": True,
+                "failure_stage": "ARTIFACT_DOWNLOAD",
+                "reason": "Previously established authoritative history is absent.",
+            },
+            assurance_observation={
+                "status": "COMPLETED",
+                "evaluation_date": "2026-08-25",
+                "candidate_state_generated": False,
+                "decisions": [item("USR-002", "PASS", "VERIFIED", "RECORD", None)],
+                "integrity_results": [
+                    {"subject_id": "USR-002", "status": "VERIFIED", "mismatched_components": []}
+                ],
+                "missing_prior_subject_ids": [],
+                "assurance_status": "history_unresolved",
+                "failure_stage": "TRUSTED_HISTORY_RESOLUTION",
+                "failure_reason": "Previously established authoritative history is absent.",
+            },
+            events=[],
+            proposed_operations=[],
+            publication={
+                "status": "WITHHELD",
+                "decision": "DO_NOT_PROMOTE",
+                "reason": "Trusted history is unresolved for an established lineage; recovery is required before publication.",
+                "candidate_state_available": False,
+                "candidate_promoted": False,
+                "upload_status": "SKIPPED",
+                "authoritative_artifact_id": None,
+            },
+            workflow_conclusion="failure",
+        )
+
+        self.assertEqual("COMPLETED", data["evaluation"]["status"])
+        self.assertEqual("ABSENT", data["trusted_history"]["status"])
+        self.assertFalse(data["trusted_history"]["historical_comparison_allowed"])
+        self.assertTrue(data["trusted_history"]["recovery_required"])
+        self.assertEqual("ARTIFACT_DOWNLOAD", data["trusted_history"]["failure_stage"])
+        summary = self.render(data)
+        self.assertIn("## Trusted-History Resolution", summary)
+        self.assertIn("Point-in-time evaluation only", summary)
+        self.assertIn("ARTIFACT_DOWNLOAD", summary)
+
 
 class CliObservabilityHandoffTests(unittest.TestCase):
+    def healthy_resolution(self):
+        return SimpleNamespace(
+            historical_comparison_allowed=True,
+            publication_allowed=True,
+        )
+
     def args(self):
         return Namespace(
             evaluation_date=None,
             output_directory=Path("runtime"),
-            previous_state=None,
+            previous_state=Path("prior.json"),
+            state_resolution=Path("resolution.json"),
         )
 
     def test_success_handoff_preserves_normal_exit_and_summary(self):
@@ -305,6 +376,7 @@ class CliObservabilityHandoffTests(unittest.TestCase):
         with (
             patch.object(cli, "parse_args", return_value=self.args()),
             patch.object(cli, "run_pipeline", return_value=result),
+            patch.object(cli, "load_state_resolution", return_value=self.healthy_resolution()),
             patch.object(cli, "classify_pipeline_status", return_value="verified"),
             patch.object(cli, "write_assurance_observation") as observe,
             patch.object(cli, "_write_pipeline_status"),
@@ -325,6 +397,7 @@ class CliObservabilityHandoffTests(unittest.TestCase):
         with (
             patch.object(cli, "parse_args", return_value=self.args()),
             patch.object(cli, "run_pipeline", return_value=result),
+            patch.object(cli, "load_state_resolution", return_value=self.healthy_resolution()),
             patch.object(
                 cli, "classify_pipeline_status", return_value="integrity_halt"
             ),
@@ -344,6 +417,7 @@ class CliObservabilityHandoffTests(unittest.TestCase):
         with (
             patch.object(cli, "parse_args", return_value=self.args()),
             patch.object(cli, "run_pipeline", side_effect=ValueError("bounded")),
+            patch.object(cli, "load_state_resolution", return_value=self.healthy_resolution()),
             patch.object(cli, "write_failure_observation") as observe,
             self.assertRaisesRegex(ValueError, "bounded"),
         ):
@@ -362,6 +436,7 @@ class CliObservabilityHandoffTests(unittest.TestCase):
         with (
             patch.object(cli, "parse_args", return_value=self.args()),
             patch.object(cli, "run_pipeline", return_value=result),
+            patch.object(cli, "load_state_resolution", return_value=self.healthy_resolution()),
             patch.object(cli, "classify_pipeline_status", return_value="verified"),
             patch.object(
                 cli,
@@ -380,6 +455,7 @@ class CliObservabilityHandoffTests(unittest.TestCase):
         with (
             patch.object(cli, "parse_args", return_value=self.args()),
             patch.object(cli, "run_pipeline", side_effect=ValueError("original")),
+            patch.object(cli, "load_state_resolution", return_value=self.healthy_resolution()),
             patch.object(
                 cli,
                 "write_failure_observation",

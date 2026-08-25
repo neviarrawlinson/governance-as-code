@@ -77,6 +77,7 @@ class PipelineRun:
     missing_subject_ids: list[str]
     events: list[GovernanceEvent]
     event_paths: list[Path]
+    historical_comparison_allowed: bool
 
 
 def _utc_now() -> datetime:
@@ -207,14 +208,24 @@ def build_assurance_decision(
 def complete_pipeline(
     prepared: PreparedPipelineRun,
     previous_state_path: Path | None = None,
+    historical_comparison_allowed: bool = True,
+    candidate_state_allowed: bool = True,
 ) -> PipelineRun:
     integrity_results = []
     decisions = []
     control_id = prepared.control["control"]["id"]
     prior_outcomes = {}
+    if previous_state_path is not None and not historical_comparison_allowed:
+        raise ValueError(
+            "A prior trusted state cannot be used when historical comparison is prohibited"
+        )
     if previous_state_path is not None:
         prior_outcomes = previous_outcomes(
-            load_trusted_state(previous_state_path, control_id)
+            load_trusted_state(
+                previous_state_path,
+                control_id,
+                current_evaluation_date=prepared.evaluation_date,
+            )
         )
 
     for record, evidence_path in zip(
@@ -262,7 +273,7 @@ def complete_pipeline(
 
     succeeded = all(item.status == VERIFIED for item in integrity_results)
     trusted_state_path = None
-    if succeeded:
+    if succeeded and candidate_state_allowed:
         trusted_state_path = write_trusted_state(
             build_trusted_state(control_id, prepared.evaluation_date, decisions),
             prepared.output_directory / "trusted-assurance-state.json",
@@ -281,6 +292,7 @@ def complete_pipeline(
         missing_subject_ids=missing_subject_ids,
         events=events,
         event_paths=event_paths,
+        historical_comparison_allowed=historical_comparison_allowed,
     )
 
 
@@ -289,8 +301,15 @@ def run_pipeline(
     output_directory: Path = DEFAULT_OUTPUT_DIRECTORY,
     generated_at: datetime | None = None,
     previous_state_path: Path | None = None,
+    historical_comparison_allowed: bool = True,
+    candidate_state_allowed: bool = True,
 ) -> PipelineRun:
     generated_at = generated_at or _utc_now()
     resolved_date = _evaluation_date(evaluation_date, generated_at)
     prepared = prepare_pipeline(resolved_date, output_directory, generated_at)
-    return complete_pipeline(prepared, previous_state_path)
+    return complete_pipeline(
+        prepared,
+        previous_state_path,
+        historical_comparison_allowed=historical_comparison_allowed,
+        candidate_state_allowed=candidate_state_allowed,
+    )
