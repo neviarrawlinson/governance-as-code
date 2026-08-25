@@ -2,6 +2,7 @@ import json
 import re
 import subprocess
 import unittest
+from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -241,7 +242,17 @@ class WorkflowConfigurationTests(unittest.TestCase):
     def test_external_actions_use_only_approved_immutable_release_pins(self):
         references = self.action_references()
 
-        self.assertEqual(10, len(references))
+        self.assertEqual(
+            Counter(
+                {
+                    "actions/checkout": 4,
+                    "actions/setup-python": 4,
+                    "actions/upload-artifact": 3,
+                    "actions/download-artifact": 3,
+                }
+            ),
+            Counter(action for action, _, _ in references),
+        )
         for action, reference, release_comment in references:
             self.assertIn(action, APPROVED_ACTIONS)
             approved_sha, approved_release = APPROVED_ACTIONS[action]

@@ -83,11 +83,24 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _write_state_ready(ready: bool) -> None:
+def _write_publication_metadata(
+    ready: bool,
+    decision: StatePublicationDecision,
+    candidate_state_available: bool,
+) -> None:
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:
         with Path(github_output).open("a", encoding="utf-8", newline="\n") as stream:
             stream.write(f"state_ready={str(ready).lower()}\n")
+            stream.write(
+                "publication_decision="
+                f"{'PROMOTE' if decision.advance else 'DO_NOT_PROMOTE'}\n"
+            )
+            stream.write(f"publication_reason={decision.reason}\n")
+            stream.write(
+                "candidate_state_available="
+                f"{str(candidate_state_available).lower()}\n"
+            )
 
 
 def main() -> None:
@@ -101,12 +114,17 @@ def main() -> None:
             args.events_directory
         ),
     )
+    candidate_state_available = args.candidate_state.exists()
     published = publish_candidate_state(
         args.candidate_state,
         args.publication_directory,
         decision,
     )
-    _write_state_ready(published is not None)
+    _write_publication_metadata(
+        published is not None,
+        decision,
+        candidate_state_available,
+    )
     print(decision.reason)
 
 

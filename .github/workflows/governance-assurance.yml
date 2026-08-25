@@ -36,6 +36,7 @@ jobs:
     outputs:
       assurance_status: ${{ steps.assurance-pipeline.outputs.assurance_status }}
       workflow_plan_ready: ${{ steps.github-dry-run.outcome == 'success' }}
+      runtime_artifact_id: ${{ steps.runtime-artifact-upload.outputs.artifact-id }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,18 +68,35 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           state_directory="$RUNNER_TEMP/trusted-assurance-state"
+          runtime_directory="$GITHUB_WORKSPACE/examples/machine-readable-control/generated-assurance"
           mkdir -p "$state_directory"
+          mkdir -p "$runtime_directory"
           workflow_runs_file="$RUNNER_TEMP/trusted-state-workflow-runs.json"
           artifacts_file="$RUNNER_TEMP/trusted-state-artifacts.json"
-          gh api --paginate --slurp -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/governance-assurance.yml/runs" -f branch="$GITHUB_REF_NAME" -f status=success -f per_page=100 > "$workflow_runs_file"
-          gh api --paginate --slurp -X GET "repos/$GITHUB_REPOSITORY/actions/artifacts" -f name=trusted-assurance-state -f per_page=100 > "$artifacts_file"
-          artifact_id="$(jq -nr --slurpfile runs "$workflow_runs_file" --slurpfile artifacts "$artifacts_file" --argjson run_id "$GITHUB_RUN_ID" '[$runs[0][].workflow_runs[].id] as $trusted_run_ids | [$artifacts[0][].artifacts[] | select(.expired == false and .workflow_run.id != $run_id) | . as $artifact | select($trusted_run_ids | index($artifact.workflow_run.id))] | sort_by(.created_at) | reverse | .[0].id // empty')"
+          metadata_file="$runtime_directory/prior-state-metadata.json"
+          if ! gh api --paginate --slurp -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/governance-assurance.yml/runs" -f branch="$GITHUB_REF_NAME" -f status=success -f per_page=100 > "$workflow_runs_file"; then
+            jq -n --arg reason "GitHub workflow-run retrieval failed." '{status: "RETRIEVAL_FAILED", reason: $reason}' > "$metadata_file"
+            exit 1
+          fi
+          if ! gh api --paginate --slurp -X GET "repos/$GITHUB_REPOSITORY/actions/artifacts" -f name=trusted-assurance-state -f per_page=100 > "$artifacts_file"; then
+            jq -n --arg reason "GitHub artifact retrieval failed." '{status: "RETRIEVAL_FAILED", reason: $reason}' > "$metadata_file"
+            exit 1
+          fi
+          artifact_record="$(jq -cn --slurpfile runs "$workflow_runs_file" --slurpfile artifacts "$artifacts_file" --argjson run_id "$GITHUB_RUN_ID" '[$runs[0][].workflow_runs[].id] as $trusted_run_ids | [$artifacts[0][].artifacts[] | select(.expired == false and .workflow_run.id != $run_id) | . as $artifact | select($trusted_run_ids | index($artifact.workflow_run.id))] | sort_by(.created_at) | reverse | .[0] // empty')"
+          artifact_id="$(jq -r '.id // empty' <<< "$artifact_record")"
           if [ -n "$artifact_id" ]; then
-            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$state_directory/state.zip"
-            unzip -q "$state_directory/state.zip" -d "$state_directory"
+            source_run_id="$(jq -r '.workflow_run.id' <<< "$artifact_record")"
+            artifact_name="$(jq -r '.name' <<< "$artifact_record")"
+            if ! gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$state_directory/state.zip" || ! unzip -q "$state_directory/state.zip" -d "$state_directory"; then
+              jq -n --arg reason "Trusted-state artifact download or extraction failed." --arg source_run_id "$source_run_id" --arg artifact_id "$artifact_id" --arg artifact_name "$artifact_name" '{status: "RETRIEVAL_FAILED", source_run_id: $source_run_id, artifact_id: $artifact_id, artifact_name: $artifact_name, reason: $reason}' > "$metadata_file"
+              exit 1
+            fi
+            prior_evaluation_date="$(jq -r '.evaluation_date // empty' "$state_directory/trusted-assurance-state.json")"
+            jq -n --arg source_run_id "$source_run_id" --arg artifact_id "$artifact_id" --arg artifact_name "$artifact_name" --arg evaluation_date "$prior_evaluation_date" '{status: "FOUND", source_run_id: $source_run_id, artifact_id: $artifact_id, artifact_name: $artifact_name, evaluation_date: $evaluation_date, reason: "Newest eligible trusted assurance state selected."}' > "$metadata_file"
             echo "path=$state_directory/trusted-assurance-state.json" >> "$GITHUB_OUTPUT"
             echo "Prior trusted assurance state retrieved."
           else
+            jq -n '{status: "NOT_FOUND", source_run_id: null, artifact_id: null, artifact_name: null, evaluation_date: null, reason: "No prior trusted assurance state is available."}' > "$metadata_file"
             echo "path=" >> "$GITHUB_OUTPUT"
             echo "No prior trusted assurance state is available."
           fi
@@ -102,6 +120,7 @@ jobs:
         run: python -m integrations.github.cli --dry-run
 
       - name: Upload synthetic demonstration artifacts
+        id: runtime-artifact-upload
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
@@ -113,6 +132,8 @@ jobs:
   live-governance-workflow:
     name: Authorized live GitHub governance workflow
     needs: assurance
+    outputs:
+      executed_operations: ${{ steps.live-operation-metadata.outputs.operations }}
     if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.live_issue_workflow == true && needs.assurance.outputs.workflow_plan_ready == 'true' && (needs.assurance.outputs.assurance_status == 'verified' || needs.assurance.outputs.assurance_status == 'integrity_halt') }}
     runs-on: ubuntu-latest
     permissions:
@@ -141,16 +162,35 @@ jobs:
           path: examples/machine-readable-control/generated-assurance
 
       - name: Execute authorized GitHub governance workflow
+        id: live-execution
         env:
           GH_TOKEN: ${{ github.token }}
           LIVE_ISSUE_WORKFLOW: ${{ inputs.live_issue_workflow }}
-        run: python -m integrations.github.cli --live
+        run: python -m integrations.github.cli --live --output generated-assurance/executed-github-issue-operations.json
+
+      - name: Surface executed operation metadata
+        id: live-operation-metadata
+        if: always()
+        run: |
+          operations_file="generated-assurance/executed-github-issue-operations.json"
+          if [ -f "$operations_file" ]; then
+            echo "operations=$(jq -c . "$operations_file")" >> "$GITHUB_OUTPUT"
+          else
+            echo "operations=[]" >> "$GITHUB_OUTPUT"
+          fi
 
   trusted-state-publication:
     name: Publish trusted assurance state
     needs:
       - assurance
       - live-governance-workflow
+    outputs:
+      publication_decision: ${{ steps.state-publication.outputs.publication_decision }}
+      publication_reason: ${{ steps.state-publication.outputs.publication_reason }}
+      candidate_state_available: ${{ steps.state-publication.outputs.candidate_state_available }}
+      state_ready: ${{ steps.state-publication.outputs.state_ready }}
+      upload_status: ${{ steps.trusted-state-upload.outcome }}
+      authoritative_artifact_id: ${{ steps.trusted-state-upload.outputs.artifact-id }}
     if: ${{ always() && (needs.assurance.outputs.assurance_status == 'verified' || needs.assurance.outputs.assurance_status == 'integrity_halt') }}
     runs-on: ubuntu-latest
     permissions:
@@ -187,6 +227,7 @@ jobs:
             --publication-directory "${{ runner.temp }}/trusted-state-publication"
 
       - name: Upload trusted assurance state
+        id: trusted-state-upload
         if: ${{ steps.state-publication.outputs.state_ready == 'true' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
@@ -195,3 +236,75 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           overwrite: true
+
+  lifecycle-diagnostics:
+    name: Governance assurance lifecycle diagnostics
+    needs:
+      - assurance
+      - live-governance-workflow
+      - trusted-state-publication
+    if: ${{ always() }}
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    defaults:
+      run:
+        working-directory: examples/machine-readable-control
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Download assurance runtime artifact
+        if: ${{ needs.assurance.outputs.runtime_artifact_id != '' }}
+        continue-on-error: true
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: synthetic-governance-assurance-${{ github.run_id }}
+          path: examples/machine-readable-control/generated-assurance
+
+      - name: Render lifecycle diagnostics
+        if: always()
+        continue-on-error: true
+        run: |
+          python -m automation.diagnostics \
+            --runtime-directory generated-assurance \
+            --output-directory "${{ runner.temp }}/lifecycle-diagnostics" \
+            --repository "${{ github.repository }}" \
+            --workflow "${{ github.workflow }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-number "${{ github.run_number }}" \
+            --trigger "${{ github.event_name }}" \
+            --branch "${{ github.ref_name }}" \
+            --commit-sha "${{ github.sha }}" \
+            --live-requested "${{ github.event_name == 'workflow_dispatch' && inputs.live_issue_workflow == true }}" \
+            --live-authorized "${{ github.event_name == 'workflow_dispatch' && inputs.live_issue_workflow == true }}" \
+            --live-job-status "${{ needs.live-governance-workflow.result }}" \
+            --executed-operations '${{ needs.live-governance-workflow.outputs.executed_operations }}' \
+            --publication-status "${{ needs.trusted-state-publication.outputs.state_ready == 'true' && needs.trusted-state-publication.outputs.upload_status == 'success' && 'PROMOTED' || (needs.trusted-state-publication.outputs.publication_decision == 'DO_NOT_PROMOTE' && 'WITHHELD' || (needs.trusted-state-publication.outputs.publication_decision == 'PROMOTE' && 'FAILED' || 'NOT_REACHED')) }}" \
+            --publication-decision "${{ needs.trusted-state-publication.outputs.publication_decision }}" \
+            --publication-reason "${{ needs.trusted-state-publication.outputs.publication_reason }}" \
+            --candidate-state-available "${{ needs.trusted-state-publication.outputs.candidate_state_available == 'true' }}" \
+            --candidate-promoted "${{ needs.trusted-state-publication.outputs.upload_status == 'success' }}" \
+            --upload-status "${{ needs.trusted-state-publication.outputs.upload_status }}" \
+            --authoritative-artifact-id "${{ needs.trusted-state-publication.outputs.authoritative_artifact_id }}" \
+            --workflow-conclusion "assurance=${{ needs.assurance.result }},live=${{ needs.live-governance-workflow.result }},publication=${{ needs.trusted-state-publication.result }}"
+
+      - name: Upload lifecycle diagnostics
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: synthetic-governance-lifecycle-diagnostics-${{ github.run_id }}
+          path: ${{ runner.temp }}/lifecycle-diagnostics/
+          if-no-files-found: warn
+          retention-days: 7

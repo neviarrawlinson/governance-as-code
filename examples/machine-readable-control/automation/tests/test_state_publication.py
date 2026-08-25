@@ -178,6 +178,12 @@ class StatePublicationCliTests(unittest.TestCase):
 
         self.assertEqual(0, completed.returncode, completed.stderr)
         self.assertIn("state_ready=false", output)
+        self.assertIn("publication_decision=DO_NOT_PROMOTE", output)
+        self.assertIn(
+            "publication_reason=Dry-run governance events remain pending authorized live processing.",
+            output,
+        )
+        self.assertIn("candidate_state_available=true", output)
         self.assertFalse(state_exists)
 
     def test_authorized_live_cli_publishes_candidate_after_success(self):
@@ -190,6 +196,12 @@ class StatePublicationCliTests(unittest.TestCase):
 
         self.assertEqual(0, completed.returncode, completed.stderr)
         self.assertIn("state_ready=true", output)
+        self.assertIn("publication_decision=PROMOTE", output)
+        self.assertIn(
+            "publication_reason=Authorized live governance processing completed successfully.",
+            output,
+        )
+        self.assertIn("candidate_state_available=true", output)
         self.assertTrue(state_exists)
 
 

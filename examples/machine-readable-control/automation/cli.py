@@ -4,6 +4,10 @@ from datetime import date
 from pathlib import Path
 
 from assurance.decision import HALT_TRUST
+from automation.diagnostics import (
+    write_assurance_observation,
+    write_failure_observation,
+)
 from automation.pipeline import DEFAULT_OUTPUT_DIRECTORY, PipelineRun, run_pipeline
 from evidence.integrity import MISMATCH, VERIFIED
 
@@ -42,6 +46,14 @@ def _write_pipeline_status(status: str) -> None:
             stream.write(f"assurance_status={status}\n")
 
 
+def _attempt_observation(writer, *args) -> None:
+    """Keep non-authoritative diagnostic writes outside lifecycle semantics."""
+    try:
+        writer(*args)
+    except Exception:
+        pass
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run the synthetic Governance as Code assurance pipeline."
@@ -66,12 +78,30 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    result = run_pipeline(
-        args.evaluation_date,
-        args.output_directory,
-        previous_state_path=args.previous_state,
+    observation_path = args.output_directory / "assurance-observation.json"
+    try:
+        result = run_pipeline(
+            args.evaluation_date,
+            args.output_directory,
+            previous_state_path=args.previous_state,
+        )
+    except Exception as error:
+        _attempt_observation(
+            write_failure_observation,
+            "ASSURANCE_EXECUTION",
+            f"{type(error).__name__}: assurance pipeline execution failed.",
+            observation_path,
+        )
+        raise
+
+    status = classify_pipeline_status(result)
+    _attempt_observation(
+        write_assurance_observation,
+        result,
+        status,
+        observation_path,
     )
-    _write_pipeline_status(classify_pipeline_status(result))
+    _write_pipeline_status(status)
     print(result.summary, end="")
 
     github_summary = os.environ.get("GITHUB_STEP_SUMMARY")

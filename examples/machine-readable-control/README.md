@@ -203,6 +203,16 @@ Permissions remain separated by job. Normal assurance and dry-run processing hav
 
 Live issue activity remains workflow initiation, not risk acceptance, remediation authorization, governance approval, policy approval, or control-owner attestation. Enabling the manual input authorizes only the existing bounded `CREATE_ISSUE`, `COMMENT_ISSUE`, `CLOSE_ISSUE`, and `NO_ACTION` behavior.
 
+## Assurance Lifecycle Observability and Diagnostics
+
+Phase 8B adds a descriptive view of the complete assurance lifecycle without changing any governance decision or workflow behavior. A final read-only job runs after assurance, authorized live processing, and trusted-state publication have reached their outcomes. It produces deterministic structured JSON and a concise **Governance Assurance Lifecycle** Markdown summary.
+
+The diagnostic record keeps governance outcomes, integrity status, assurance actions, transitions, governance events, workflow operations, and trusted-state publication separate. It identifies the prior trusted-state source when available, aggregates current results, distinguishes proposed operations from executed operations, records the existing publication decision and reason verbatim, and describes bounded lifecycle failures such as retrieval failure or integrity halt.
+
+Diagnostics are non-authoritative. They do not rerun validation, verify evidence, calculate transitions, generate events, authorize live execution, determine publication eligibility, or change workflow success and failure semantics. A diagnostic rendering or upload problem cannot prevent an otherwise eligible trusted-state publication. Conversely, diagnostics cannot turn a failed assurance lifecycle into a successful one.
+
+The JSON and Markdown files are uploaded as the separate `synthetic-governance-lifecycle-diagnostics-<run-id>` runtime artifact with seven-day retention. They contain lifecycle metadata rather than credentials, environment dumps, evidence payloads, integrity hashes, file contents, or raw GitHub API responses. This bounded runtime artifact is not a long-term observability, evidence-retention, or audit system.
+
 ## What We Will Build
 
 1. Define `ACP-001-03` in a structured YAML format.
