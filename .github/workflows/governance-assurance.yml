@@ -104,21 +104,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: synthetic-governance-assurance-${{ github.run_id }}
-          path: |
-            examples/machine-readable-control/generated-assurance/
-            !examples/machine-readable-control/generated-assurance/trusted-assurance-state.json
+          path: examples/machine-readable-control/generated-assurance/
           if-no-files-found: warn
           retention-days: 7
-
-      - name: Upload trusted assurance state
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: trusted-assurance-state
-          path: examples/machine-readable-control/generated-assurance/trusted-assurance-state.json
-          if-no-files-found: error
-          retention-days: 30
-          overwrite: true
 
   live-governance-workflow:
     name: Authorized live GitHub governance workflow
@@ -155,3 +143,53 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           LIVE_ISSUE_WORKFLOW: ${{ inputs.live_issue_workflow }}
         run: python -m integrations.github.cli --live
+
+  trusted-state-publication:
+    name: Publish trusted assurance state
+    needs:
+      - assurance
+      - live-governance-workflow
+    if: ${{ always() && (needs.assurance.outputs.assurance_status == 'verified' || needs.assurance.outputs.assurance_status == 'integrity_halt') }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    defaults:
+      run:
+        working-directory: examples/machine-readable-control
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download candidate trusted state
+        uses: actions/download-artifact@v4
+        with:
+          name: synthetic-governance-assurance-${{ github.run_id }}
+          path: examples/machine-readable-control/generated-assurance
+
+      - name: Evaluate trusted state publication
+        id: state-publication
+        run: |
+          python -m automation.state_publication \
+            --assurance-status "${{ needs.assurance.outputs.assurance_status }}" \
+            --event-name "${{ github.event_name }}" \
+            --live-requested "${{ inputs.live_issue_workflow == true }}" \
+            --live-job-result "${{ needs.live-governance-workflow.result }}" \
+            --events-directory generated-assurance/events \
+            --candidate-state generated-assurance/trusted-assurance-state.json \
+            --publication-directory "${{ runner.temp }}/trusted-state-publication"
+
+      - name: Upload trusted assurance state
+        if: ${{ steps.state-publication.outputs.state_ready == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: trusted-assurance-state
+          path: ${{ runner.temp }}/trusted-state-publication/trusted-assurance-state.json
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true

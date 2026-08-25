@@ -149,7 +149,7 @@ class ControlFailureWorkflowTests(unittest.TestCase):
         self.assertIn(event_marker(event.event_id), gateway.comments[42][0])
 
     def test_recovery_comments_then_closes_existing_issue(self):
-        gateway = FakeIssueGateway([existing_issue("control-failure")])
+        gateway = FakeIssueGateway([existing_issue("control-failure", number=2)])
         event = governance_event(
             "CONTROL_RECOVERY_RECORDED",
             outcome="PASS",
@@ -165,7 +165,63 @@ class ControlFailureWorkflowTests(unittest.TestCase):
             [COMMENT_ISSUE, CLOSE_ISSUE],
             [item.operation for item in operations],
         )
+        self.assertEqual([2, 2], [item.issue_number for item in operations])
         self.assertEqual(["comment", "close"], [item[0] for item in gateway.writes])
+
+    def test_persistent_usr_004_failure_comments_without_closing_issue(self):
+        issue = Issue(
+            number=3,
+            title="Existing USR-004 governance workflow",
+            body=correlation_marker(
+                correlation_id("ACP-001-03", "USR-004", "control-failure")
+            ),
+        )
+        gateway = FakeIssueGateway([issue])
+        event = governance_event(
+            "CONTROL_FAILURE_CONTINUES",
+            subject_id="USR-004",
+            transition="PERSISTENT_CONTROL_FAILURE",
+            severity="medium",
+        )
+
+        operations = process_events([event], gateway, dry_run=False)
+
+        self.assertEqual([COMMENT_ISSUE], [item.operation for item in operations])
+        self.assertEqual([3], [item.issue_number for item in operations])
+        self.assertEqual(["comment"], [item[0] for item in gateway.writes])
+
+    def test_repeated_recovery_after_closure_is_idempotent(self):
+        class ClosingIssueGateway(FakeIssueGateway):
+            def close_issue(self, issue_number):
+                super().close_issue(issue_number)
+                self.issues = [
+                    issue for issue in self.issues if issue.number != issue_number
+                ]
+
+        gateway = ClosingIssueGateway(
+            [existing_issue("control-failure", number=2)]
+        )
+        event = governance_event(
+            "CONTROL_RECOVERY_RECORDED",
+            outcome="PASS",
+            action="RECORD",
+            transition="CONTROL_RECOVERY",
+            severity="info",
+            review=False,
+        )
+
+        first = process_events([event], gateway, dry_run=False)
+        second = process_events([event], gateway, dry_run=False)
+
+        self.assertEqual(
+            [COMMENT_ISSUE, CLOSE_ISSUE],
+            [item.operation for item in first],
+        )
+        self.assertEqual([NO_ACTION], [item.operation for item in second])
+        self.assertEqual(
+            [("comment", 2), ("close", 2)],
+            [(item[0], item[1]) for item in gateway.writes],
+        )
 
     def test_recovery_without_issue_does_not_invent_history(self):
         gateway = FakeIssueGateway()

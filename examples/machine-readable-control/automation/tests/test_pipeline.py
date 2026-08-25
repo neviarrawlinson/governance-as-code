@@ -247,25 +247,32 @@ class WorkflowConfigurationTests(unittest.TestCase):
             workflow["permissions"],
         )
         self.assertNotIn("write", workflow["permissions"].values())
-        steps = workflow["jobs"]["assurance"]["steps"]
-        uploads = [
+        assurance_steps = workflow["jobs"]["assurance"]["steps"]
+        assurance_uploads = [
             step
-            for step in steps
+            for step in assurance_steps
             if step.get("uses", "").startswith("actions/upload-artifact@")
         ]
-        runtime_upload = next(
-            step for step in uploads if step["with"]["retention-days"] == "7"
-        )
-        state_upload = next(
-            step for step in uploads if step["with"]["retention-days"] == "30"
-        )
+        self.assertEqual(1, len(assurance_uploads))
+        runtime_upload = assurance_uploads[0]
+        self.assertEqual("7", runtime_upload["with"]["retention-days"])
         self.assertIn("generated-assurance", runtime_upload["with"]["path"])
-        self.assertIn(
-            "!examples/machine-readable-control/generated-assurance/trusted-assurance-state.json",
-            runtime_upload["with"]["path"],
+        self.assertNotIn("!", runtime_upload["with"]["path"])
+
+        publication_job = workflow["jobs"]["trusted-state-publication"]
+        self.assertEqual(
+            {"actions": "read", "contents": "read"},
+            publication_job["permissions"],
+        )
+        self.assertNotIn("issues", publication_job["permissions"])
+        state_upload = next(
+            step
+            for step in publication_job["steps"]
+            if step.get("uses", "").startswith("actions/upload-artifact@")
         )
         self.assertEqual("trusted-assurance-state", state_upload["with"]["name"])
-        self.assertEqual("success()", state_upload["if"])
+        self.assertEqual("30", state_upload["with"]["retention-days"])
+        self.assertIn("state_ready == 'true'", state_upload["if"])
 
     def test_workflow_retrieves_state_before_pipeline_execution(self):
         workflow = self.workflow()
@@ -290,7 +297,7 @@ class WorkflowConfigurationTests(unittest.TestCase):
         steps = workflow["jobs"]["assurance"]["steps"]
         state_upload = next(
             step
-            for step in steps
+            for step in workflow["jobs"]["trusted-state-publication"]["steps"]
             if step.get("with", {}).get("retention-days") == "30"
         )
         self.assertEqual("true", state_upload["with"]["overwrite"])
@@ -303,6 +310,31 @@ class WorkflowConfigurationTests(unittest.TestCase):
         self.assertIn("workflow_run.id != $run_id", retrieval["run"])
         self.assertIn(
             "actions/workflows/governance-assurance.yml/runs", retrieval["run"]
+        )
+
+    def test_state_publication_waits_for_dry_run_or_authorized_live_boundary(self):
+        workflow = self.workflow()
+        publication_job = workflow["jobs"]["trusted-state-publication"]
+        publication_step = next(
+            step
+            for step in publication_job["steps"]
+            if step["name"] == "Evaluate trusted state publication"
+        )
+
+        self.assertEqual(
+            ["assurance", "live-governance-workflow"], publication_job["needs"]
+        )
+        self.assertIn("always()", publication_job["if"])
+        self.assertIn(
+            "automation.state_publication", publication_step["run"]
+        )
+        self.assertIn("github.event_name", publication_step["run"])
+        self.assertIn("inputs.live_issue_workflow", publication_step["run"])
+        self.assertIn(
+            "needs.live-governance-workflow.result", publication_step["run"]
+        )
+        self.assertIn(
+            "needs.assurance.outputs.assurance_status", publication_step["run"]
         )
 
     def test_workflow_runs_event_tests(self):
@@ -465,6 +497,41 @@ class PipelineEventIntegrationTests(unittest.TestCase):
         self.assertEqual(
             ["CONTROL_RECOVERY_RECORDED"],
             [item.event_type for item in result.events],
+        )
+
+    def test_dry_run_candidate_does_not_consume_recovery_from_prior_state(self):
+        prior_state = {
+            "control_id": "ACP-001-03",
+            "evaluation_date": "2026-08-21",
+            "subjects": [
+                {"subject_id": "USR-002", "governance_outcome": "FAIL"},
+            ],
+        }
+        self.previous_state_path.write_text(
+            json.dumps(prior_state), encoding="utf-8"
+        )
+
+        dry_run = run_pipeline(
+            evaluation_date=EVALUATION_DATE,
+            output_directory=self.output_directory / "dry-run",
+            generated_at=GENERATED_AT,
+            previous_state_path=self.previous_state_path,
+        )
+        authorized_run = run_pipeline(
+            evaluation_date=EVALUATION_DATE,
+            output_directory=self.output_directory / "authorized-run",
+            generated_at=GENERATED_AT,
+            previous_state_path=self.previous_state_path,
+        )
+
+        self.assertEqual(prior_state, json.loads(self.previous_state_path.read_text()))
+        self.assertEqual(
+            ["CONTROL_RECOVERY_RECORDED"],
+            [item.event_type for item in dry_run.events],
+        )
+        self.assertEqual(
+            ["CONTROL_RECOVERY_RECORDED"],
+            [item.event_type for item in authorized_run.events],
         )
 
     def test_transition_decisions_produce_runtime_event_files(self):
