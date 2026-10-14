@@ -1,0 +1,144 @@
+name: Explicit Governance History Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Preview by default; promote only an explicitly reviewed candidate
+        type: choice
+        options: [preview, promote]
+        default: preview
+        required: true
+      preview_run_id:
+        description: Exact approved preview run ID (promotion only)
+        type: string
+      preview_artifact_id:
+        description: Exact approved preview artifact ID (promotion only)
+        type: string
+      authorization_path:
+        description: Reviewed JSON approval within examples/machine-readable-control/recovery/
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  issues: read
+
+concurrency:
+  group: governance-assurance-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: repository/examples/machine-readable-control
+    steps:
+      - name: Check out reviewed default-branch source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          path: repository
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Test recovery and existing assurance behavior
+        run: |
+          python -m unittest discover -s validation/tests -v
+          python -m unittest discover -s evidence/tests -v
+          python -m unittest discover -s assurance/tests -v
+          python -m unittest discover -s automation/tests -v
+          python -m unittest discover -s events/tests -v
+          python -m unittest discover -s integrations/github/tests -v
+
+      - name: Generate preview without publishing or modifying issues
+        if: ${{ inputs.mode == 'preview' }}
+        run: |
+          python -m automation.recovery_cli preview \
+            --evaluation-date "$(date -u +%F)" \
+            --output-directory "$RUNNER_TEMP/recovery-preview"
+
+      - name: Upload preview for human review
+        if: ${{ inputs.mode == 'preview' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: synthetic-history-recovery-preview-${{ github.run_id }}
+          path: ${{ runner.temp }}/recovery-preview/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Validate reviewed approval and download exact preview
+        if: ${{ inputs.mode == 'promote' }}
+        id: preview-inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_PATH: ${{ inputs.authorization_path }}
+          PREVIEW_RUN_ID: ${{ inputs.preview_run_id }}
+          PREVIEW_ARTIFACT_ID: ${{ inputs.preview_artifact_id }}
+          RECOVERY_ACTOR: ${{ github.triggering_actor }}
+          AUTHORIZATION_COMMIT: ${{ github.sha }}
+        run: |
+          python -m automation.recovery_workflow download-preview \
+            --root "$GITHUB_WORKSPACE/repository" \
+            --authorization-path "$APPROVAL_PATH" \
+            --authorization-copy "$RUNNER_TEMP/recovery-authorization.json" \
+            --destination "$RUNNER_TEMP/approved-preview" \
+            --preview-run-id "$PREVIEW_RUN_ID" \
+            --preview-artifact-id "$PREVIEW_ARTIFACT_ID" \
+            --repository "$GITHUB_REPOSITORY" --branch "$GITHUB_REF_NAME" \
+            --actor "$RECOVERY_ACTOR" --commit "$AUTHORIZATION_COMMIT"
+
+      - name: Check out exact preview source for evidence verification
+        if: ${{ inputs.mode == 'promote' }}
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ steps.preview-inputs.outputs.source_commit }}
+          path: evaluation-source
+
+      - name: Prepare validated state and unknown-history receipt
+        if: ${{ inputs.mode == 'promote' }}
+        working-directory: evaluation-source/examples/machine-readable-control
+        env:
+          RECOVERY_ACTOR: ${{ github.triggering_actor }}
+          AUTHORIZATION_COMMIT: ${{ github.sha }}
+          PREVIEW_RUN_ID: ${{ inputs.preview_run_id }}
+          PREVIEW_ARTIFACT_ID: ${{ inputs.preview_artifact_id }}
+        run: |
+          python -m automation.recovery_cli prepare \
+            --preview-directory "$RUNNER_TEMP/approved-preview" \
+            --authorization "$RUNNER_TEMP/recovery-authorization.json" \
+            --repository "$GITHUB_REPOSITORY" --branch "$GITHUB_REF_NAME" \
+            --actor "$RECOVERY_ACTOR" --authorization-commit "$AUTHORIZATION_COMMIT" \
+            --promotion-run-id "$GITHUB_RUN_ID" \
+            --preview-run-id "$PREVIEW_RUN_ID" --preview-artifact-id "$PREVIEW_ARTIFACT_ID" \
+            --output-directory "$RUNNER_TEMP/recovery-publication"
+
+      - name: Check newer baseline and prior retry before upload
+        if: ${{ inputs.mode == 'promote' }}
+        id: freshness
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -m automation.recovery_workflow freshness \
+            --repository "$GITHUB_REPOSITORY" --branch "$GITHUB_REF_NAME" \
+            --current-run-id "$GITHUB_RUN_ID" \
+            --publication "$RUNNER_TEMP/recovery-publication" \
+            --prior-directory "$RUNNER_TEMP/recovery-prior-state"
+
+      - name: Publish approved baseline with receipt
+        if: ${{ inputs.mode == 'promote' && steps.freshness.outputs.ready == 'true' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: trusted-assurance-state
+          path: ${{ runner.temp }}/recovery-publication/
+          retention-days: 30
+          if-no-files-found: error
+          overwrite: false

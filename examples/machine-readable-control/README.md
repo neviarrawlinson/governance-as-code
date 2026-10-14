@@ -234,3 +234,7 @@ The JSON and Markdown files are uploaded as the separate `synthetic-governance-l
 5. Demonstrate how those results can support continuous assurance.
 
 The control definition, synthetic validation, Structured Control Validation Evidence generation, integrity verification, assurance decision, automated execution, bounded historical comparison, structured governance events, dry-run GitHub workflow planning, and explicitly authorized live GitHub workflow path are now included. Enterprise state persistence, enterprise evidence retention, other external workflow integrations, and production continuous-assurance capabilities are not implemented.
+
+## Explicit Recovery of Missing Trusted History
+
+An established lineage with unavailable trusted state continues to block historical comparison, issue operations and ordinary state publication. The separate manual [history recovery procedure](recovery/README.md) can preview a fresh synthetic baseline, then publish the exact candidate only after a reviewed, candidate-specific authorization. Recovery records an unknown historical interval and leaves USR-004 failing; it does not remediate MFA or close its issue. Recovery publications include a receipt that normal retrieval validates against GitHub source metadata. Artifact retention remains bounded.
