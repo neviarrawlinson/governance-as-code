@@ -238,3 +238,9 @@ The control definition, synthetic validation, Structured Control Validation Evid
 ## Explicit Recovery of Missing Trusted History
 
 An established lineage with unavailable trusted state continues to block historical comparison, issue operations and ordinary state publication. The separate manual [history recovery procedure](recovery/README.md) can preview a fresh synthetic baseline, then publish the exact candidate only after a reviewed, candidate-specific authorization. Recovery records an unknown historical interval and leaves USR-004 failing; it does not remediate MFA or close its issue. Recovery publications include a receipt that normal retrieval validates against GitHub source metadata. Artifact retention remains bounded.
+
+### USR-004 synthetic MFA remediation
+
+The current demonstration dataset enables MFA for USR-004 under the human remediation decision in [issue #3](https://github.com/neviarrawlinson/governance-as-code/issues/3#issuecomment-6175561712). The expired EXC-002 record is retained for traceability; it is not renewed or used as the remediation basis. A verified evaluation against the approved FAIL baseline should produce PASS and CONTROL_RECOVERY. Keep live issue processing disabled until the hosted evidence and closure rationale have been reviewed.
+
+The original failing scenario is preserved in `test-fixtures/identity-environment-failure.json` for validator, integrity, persistence, and explicit history-recovery regression tests. Earlier failure examples describe that preserved scenario, rather than the remediated current dataset. The recovery workflow deliberately rejects a new preview against the remediated dataset: the approved FAIL baseline has already been published, and further rebaselining would require a separately reviewed design.

@@ -15,6 +15,10 @@ class ReadOnlyIssueGateway:
  def has_event_marker(self,issue,marker):return False
 
 class RecoveryLifecycleTests(unittest.TestCase):
+ def setUp(self):
+  fixture=pipeline.EXAMPLE_ROOT/'test-fixtures/identity-environment-failure.json'
+  for module in (pipeline,recovery):
+   patcher=patch.object(module,'ENVIRONMENT_PATH',fixture);patcher.start();self.addCleanup(patcher.stop)
  def test_absent_history_then_recovery_then_fixture_mfa_remediation(self):
   with tempfile.TemporaryDirectory() as d:
    root=Path(d);metadata=root/'metadata.json';metadata.write_text(json.dumps({'status':'ABSENT'}))

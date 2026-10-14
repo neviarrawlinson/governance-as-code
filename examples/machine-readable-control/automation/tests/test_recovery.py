@@ -1,10 +1,15 @@
 import hashlib, importlib, json, tempfile, unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 class RecoveryTests(unittest.TestCase):
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
+  from automation import pipeline, recovery
+  fixture=pipeline.EXAMPLE_ROOT/'test-fixtures/identity-environment-failure.json'
+  for module in (pipeline,recovery):
+   patcher=patch.object(module,'ENVIRONMENT_PATH',fixture);patcher.start();self.addCleanup(patcher.stop)
  def module(self):
   self.assertIsNotNone(importlib.util.find_spec('automation.recovery'),'explicit recovery implementation is missing')
   return importlib.import_module('automation.recovery')

@@ -6,7 +6,10 @@ from test_recovery import RecoveryTests
 class RecoveryCliTests(RecoveryTests):
  def cli_authorization(self,manifest,today=None):
   today=today or datetime.now(timezone.utc).date();a=self.authorization(manifest);a.update(approved_at=today.isoformat(),valid_until=(today+timedelta(days=3)).isoformat());return a
- def cli(self,*args):return subprocess.run([sys.executable,'-m','automation.recovery_cli',*map(str,args)],capture_output=True,text=True)
+ def cli(self,*args):
+  # Real CLI process, pinned to the original failing regression scenario.
+  script="import runpy; from automation import pipeline,recovery; fixture=pipeline.EXAMPLE_ROOT/'test-fixtures/identity-environment-failure.json'; pipeline.ENVIRONMENT_PATH=fixture; recovery.ENVIRONMENT_PATH=fixture; runpy.run_module('automation.recovery_cli',run_name='__main__')"
+  return subprocess.run([sys.executable,'-c',script,*map(str,args)],capture_output=True,text=True)
  def test_preview_cli_does_not_publish(self):
   r=self.cli('preview','--evaluation-date','2026-10-13','--output-directory',self.root)
   self.assertEqual(r.returncode,0,r.stderr);self.assertTrue((self.root/'recovery-manifest.json').is_file());self.assertFalse((self.root/'recovery-receipt.json').exists())

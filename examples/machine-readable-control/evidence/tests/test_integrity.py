@@ -23,7 +23,7 @@ from validation.validator import evaluate_environment, load_control, load_enviro
 EXAMPLE_ROOT = Path(__file__).resolve().parents[2]
 REPOSITORY_ROOT = EXAMPLE_ROOT.parents[1]
 CONTROL_PATH = EXAMPLE_ROOT / "controls" / "ACP-001-03.yaml"
-ENVIRONMENT_PATH = EXAMPLE_ROOT / "sample-data" / "identity-environment.json"
+ENVIRONMENT_PATH = EXAMPLE_ROOT / "test-fixtures" / "identity-environment-failure.json"
 VALIDATOR_PATH = EXAMPLE_ROOT / "validation" / "validator.py"
 EVALUATION_DATE = date(2026, 8, 22)
 GENERATED_AT = datetime(2026, 8, 22, 14, 0, tzinfo=timezone.utc)
