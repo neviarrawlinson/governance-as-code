@@ -44,6 +44,18 @@ APPROVED_ACTIONS = {
 }
 
 
+# Preserve the original failing scenario independently of the remediated demo.
+def setUpModule():
+    from unittest.mock import patch
+    import automation.pipeline as pipeline
+    global _failure_environment_patch
+    _failure_environment_patch = patch.object(pipeline, "ENVIRONMENT_PATH", EXAMPLE_ROOT / "test-fixtures" / "identity-environment-failure.json")
+    _failure_environment_patch.start()
+
+def tearDownModule():
+    _failure_environment_patch.stop()
+
+
 class PipelineIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.temporary_directory = TemporaryDirectory()

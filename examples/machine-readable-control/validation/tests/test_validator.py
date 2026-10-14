@@ -16,7 +16,7 @@ from validation.validator import (
 
 EXAMPLE_ROOT = Path(__file__).resolve().parents[2]
 CONTROL_PATH = EXAMPLE_ROOT / "controls" / "ACP-001-03.yaml"
-ENVIRONMENT_PATH = EXAMPLE_ROOT / "sample-data" / "identity-environment.json"
+ENVIRONMENT_PATH = EXAMPLE_ROOT / "test-fixtures" / "identity-environment-failure.json"
 EVALUATION_DATE = date(2026, 8, 22)
 
 CONTROL = {

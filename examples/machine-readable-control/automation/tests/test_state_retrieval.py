@@ -44,6 +44,12 @@ class RetrievalTests(unittest.TestCase):
 if __name__=='__main__':unittest.main()
 
 class ReceiptValidationTests(unittest.TestCase):
+ def setUp(self):
+  from unittest.mock import patch
+  from automation import pipeline, recovery
+  fixture=pipeline.EXAMPLE_ROOT/'test-fixtures/identity-environment-failure.json'
+  for module in (pipeline,recovery):
+   patcher=patch.object(module,'ENVIRONMENT_PATH',fixture);patcher.start();self.addCleanup(patcher.stop)
  def test_valid_receipt_and_tampering(self):
   import importlib
   self.assertIsNotNone(importlib.util.find_spec('automation.state_retrieval'),'receipt validator missing')
