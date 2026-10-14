@@ -28,7 +28,7 @@ permissions:
   issues: read
 
 concurrency:
-  group: governance-assurance-${{ github.workflow }}-${{ github.ref }}
+  group: governance-assurance-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -70,52 +70,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          state_directory="$RUNNER_TEMP/trusted-assurance-state"
-          runtime_directory="$GITHUB_WORKSPACE/examples/machine-readable-control/generated-assurance"
-          mkdir -p "$state_directory"
-          mkdir -p "$runtime_directory"
-          workflow_runs_file="$RUNNER_TEMP/trusted-state-workflow-runs.json"
-          artifacts_file="$RUNNER_TEMP/trusted-state-artifacts.json"
-          metadata_file="$runtime_directory/prior-state-metadata.json"
-          retrieval_available=true
-          if ! gh api --paginate --slurp -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/governance-assurance.yml/runs" -f branch="$GITHUB_REF_NAME" -f status=success -f per_page=100 > "$workflow_runs_file"; then
-            jq -n --arg reason "GitHub workflow-run retrieval failed." '{status: "UNAVAILABLE", failure_stage: "API_RETRIEVAL", reason: $reason}' > "$metadata_file"
-            retrieval_available=false
-          fi
-          if [ "$retrieval_available" = true ] && ! gh api --paginate --slurp -X GET "repos/$GITHUB_REPOSITORY/actions/artifacts" -f name=trusted-assurance-state -f per_page=100 > "$artifacts_file"; then
-            jq -n --arg reason "GitHub artifact retrieval failed." '{status: "UNAVAILABLE", failure_stage: "API_RETRIEVAL", reason: $reason}' > "$metadata_file"
-            retrieval_available=false
-          fi
-          if [ "$retrieval_available" = false ]; then
-            echo "path=" >> "$GITHUB_OUTPUT"
-            echo "Trusted assurance state retrieval is unavailable."
-            exit 0
-          fi
-          artifact_record="$(jq -cn --slurpfile runs "$workflow_runs_file" --slurpfile artifacts "$artifacts_file" --argjson run_id "$GITHUB_RUN_ID" '[$runs[0][].workflow_runs[].id] as $trusted_run_ids | [$artifacts[0][].artifacts[] | select(.expired == false and .workflow_run.id != $run_id) | . as $artifact | select($trusted_run_ids | index($artifact.workflow_run.id))] | sort_by([.created_at, .id]) | reverse | .[0] // empty')"
-          artifact_id="$(jq -r '.id // empty' <<< "$artifact_record")"
-          if [ -n "$artifact_id" ]; then
-            source_run_id="$(jq -r '.workflow_run.id' <<< "$artifact_record")"
-            artifact_name="$(jq -r '.name' <<< "$artifact_record")"
-            if ! gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$state_directory/state.zip" || ! unzip -q "$state_directory/state.zip" -d "$state_directory"; then
-              jq -n --arg reason "Trusted-state artifact download or extraction failed." --arg source_run_id "$source_run_id" --arg artifact_id "$artifact_id" --arg artifact_name "$artifact_name" '{status: "UNAVAILABLE", failure_stage: "ARTIFACT_DOWNLOAD", source_run_id: $source_run_id, artifact_id: $artifact_id, artifact_name: $artifact_name, reason: $reason}' > "$metadata_file"
-              echo "path=" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            jq -n --arg source_run_id "$source_run_id" --arg artifact_id "$artifact_id" --arg artifact_name "$artifact_name" '{status: "FOUND", source_run_id: $source_run_id, artifact_id: $artifact_id, artifact_name: $artifact_name, reason: "Newest eligible trusted assurance state retrieved for validation."}' > "$metadata_file"
-            echo "path=$state_directory/trusted-assurance-state.json" >> "$GITHUB_OUTPUT"
-            echo "Prior trusted assurance state retrieved."
-          else
-            expired_record="$(jq -cn --slurpfile runs "$workflow_runs_file" --slurpfile artifacts "$artifacts_file" --argjson run_id "$GITHUB_RUN_ID" '[$runs[0][].workflow_runs[].id] as $trusted_run_ids | [$artifacts[0][].artifacts[] | select(.expired == true and .workflow_run.id != $run_id) | . as $artifact | select($trusted_run_ids | index($artifact.workflow_run.id))] | sort_by([.created_at, .id]) | reverse | .[0] // empty')"
-            if [ -n "$(jq -r '.id // empty' <<< "$expired_record")" ]; then
-              jq -n --arg reason "Previously published trusted assurance state is expired." --arg source_run_id "$(jq -r '.workflow_run.id' <<< "$expired_record")" --arg artifact_id "$(jq -r '.id' <<< "$expired_record")" --arg artifact_name "$(jq -r '.name' <<< "$expired_record")" '{status: "EXPIRED", source_run_id: $source_run_id, artifact_id: $artifact_id, artifact_name: $artifact_name, reason: $reason}' > "$metadata_file"
-            elif jq -e --argjson run_id "$GITHUB_RUN_ID" '[.[].artifacts[] | select(.workflow_run.id != $run_id)] | length > 0' "$artifacts_file" > /dev/null; then
-              jq -n '{status: "INELIGIBLE", reason: "Trusted-state artifacts exist, but none satisfy the successful-run eligibility rules."}' > "$metadata_file"
-            else
-              jq -n '{status: "ABSENT", reason: "No trusted-state artifact is present for the established lineage."}' > "$metadata_file"
-            fi
-            echo "path=" >> "$GITHUB_OUTPUT"
-            echo "No active eligible trusted assurance state was found."
-          fi
+          python -m automation.state_retrieval \
+            --repository "$GITHUB_REPOSITORY" \
+            --branch "$GITHUB_REF_NAME" \
+            --current-run-id "$GITHUB_RUN_ID" \
+            --destination "$RUNNER_TEMP/trusted-assurance-state" \
+            --metadata generated-assurance/prior-state-metadata.json
 
       - name: Resolve trusted assurance history
         id: trusted-history

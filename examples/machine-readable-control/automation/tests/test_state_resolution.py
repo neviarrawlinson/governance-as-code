@@ -196,3 +196,11 @@ class TrustedStateResolutionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class RecoveryMetadataResolutionTests(TrustedStateResolutionTests):
+    def test_recovery_source_without_validated_receipt_blocks(self):
+        self.write_state()
+        self.write_metadata('FOUND',source_run_id='1',artifact_id='2',artifact_name='trusted-assurance-state',source_kind='RECOVERY')
+        result=self.resolve()
+        self.assertFalse(result.issue_operations_allowed)
+        self.assertTrue(result.recovery_required)

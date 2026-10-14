@@ -30,7 +30,7 @@ LINEAGE_KEYS = {
     "first_authoritative_artifact_id",
     "first_evaluation_date",
 }
-RAW_STATUSES = {FOUND, ABSENT, EXPIRED, UNAVAILABLE, INELIGIBLE, NOT_REACHED}
+RAW_STATUSES = {FOUND, ABSENT, EXPIRED, UNAVAILABLE, INVALID, INELIGIBLE, NOT_REACHED}
 
 
 @dataclass(frozen=True)
@@ -125,6 +125,8 @@ def resolve_trusted_state(
             metadata.get("reason") or "Authoritative trusted history was not resolved.",
             metadata,
         )
+    if metadata.get('source_kind') not in (None, 'NORMAL', 'RECOVERY') or (metadata.get('source_kind') == 'RECOVERY' and metadata.get('recovery_receipt_verified') is not True):
+        return _unsafe_resolution(lineage, INELIGIBLE, 'Recovery source requires a validated recovery receipt.', metadata)
     required_source = (
         metadata.get("source_run_id"),
         metadata.get("artifact_id"),

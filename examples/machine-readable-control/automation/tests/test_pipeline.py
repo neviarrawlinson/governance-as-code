@@ -392,24 +392,12 @@ class WorkflowConfigurationTests(unittest.TestCase):
             names.index("Run synthetic assurance pipeline"),
         )
 
-    def test_trusted_state_retrieval_uses_paginated_file_backed_api_data(self):
-        workflow = self.workflow()
-        retrieval = next(
-            step
-            for step in workflow["jobs"]["assurance"]["steps"]
-            if step["name"] == "Retrieve prior trusted assurance state"
-        )
-        script = retrieval["run"]
-
-        self.assertEqual(2, script.count("gh api --paginate --slurp"))
-        self.assertIn('> "$workflow_runs_file"', script)
-        self.assertIn('> "$artifacts_file"', script)
-        self.assertIn('--slurpfile runs "$workflow_runs_file"', script)
-        self.assertIn('--slurpfile artifacts "$artifacts_file"', script)
-        self.assertNotIn('workflow_runs="$(', script)
-        self.assertNotIn('artifacts="$(', script)
-        self.assertNotIn("--argjson runs", script)
-        self.assertNotIn("--argjson artifacts", script)
+    def test_trusted_state_retrieval_delegates_to_validated_module(self):
+        retrieval = next(step for step in self.workflow()['jobs']['assurance']['steps']
+                         if step['name'] == 'Retrieve prior trusted assurance state')
+        self.assertIn('python -m automation.state_retrieval', retrieval['run'])
+        self.assertIn('--metadata generated-assurance/prior-state-metadata.json', retrieval['run'])
+        self.assertIn('--current-run-id "$GITHUB_RUN_ID"', retrieval['run'])
 
     def test_retrieval_classifies_raw_state_without_inferring_first_run(self):
         workflow = self.workflow()
@@ -423,8 +411,7 @@ class WorkflowConfigurationTests(unittest.TestCase):
             if step["name"] == "Resolve trusted assurance history"
         )
 
-        for status in ("FOUND", "ABSENT", "EXPIRED", "UNAVAILABLE", "INELIGIBLE"):
-            self.assertIn(status, retrieval["run"])
+        self.assertIn("automation.state_retrieval", retrieval["run"])
         self.assertNotIn("NOT_FOUND", retrieval["run"])
         self.assertIn("automation.state_resolution", resolution["run"])
         self.assertIn("trusted-state-lineage.json", resolution["run"])
@@ -434,13 +421,13 @@ class WorkflowConfigurationTests(unittest.TestCase):
         )
 
     def test_newest_artifact_selection_has_deterministic_id_tie_breaker(self):
-        retrieval = next(
-            step
-            for step in self.workflow()["jobs"]["assurance"]["steps"]
-            if step["name"] == "Retrieve prior trusted assurance state"
-        )
-
-        self.assertIn("sort_by([.created_at, .id])", retrieval["run"])
+        from automation.state_retrieval import select_trusted_state
+        run = dict(id=1, head_branch='main', head_sha='a'*40, status='completed', conclusion='success',
+                   path='.github/workflows/governance-assurance.yml', repository={'id':10}, head_repository={'id':10})
+        artifacts = [dict(id=i, name='trusted-assurance-state', expired=False, created_at='2026-10-13T12:00:00Z',
+                          workflow_run={'id':1, 'head_branch':'main', 'head_sha':'a'*40}) for i in [5,9,2]]
+        selected=select_trusted_state([run],artifacts,branch='main',current_run_id='99')
+        self.assertEqual(selected['artifact']['id'],9)
 
     def test_unresolved_history_cannot_reach_issue_writes_or_publication(self):
         workflow = self.workflow()
@@ -474,7 +461,7 @@ class WorkflowConfigurationTests(unittest.TestCase):
 
         self.assertEqual(
             {
-                "group": "governance-assurance-${{ github.workflow }}-${{ github.ref }}",
+                "group": "governance-assurance-${{ github.ref_name }}",
                 "cancel-in-progress": "false",
             },
             workflow["concurrency"],
@@ -492,10 +479,7 @@ class WorkflowConfigurationTests(unittest.TestCase):
             if step["name"] == "Retrieve prior trusted assurance state"
         )
         self.assertIn("GITHUB_RUN_ID", retrieval["run"])
-        self.assertIn("workflow_run.id != $run_id", retrieval["run"])
-        self.assertIn(
-            "actions/workflows/governance-assurance.yml/runs", retrieval["run"]
-        )
+        self.assertIn("--current-run-id", retrieval["run"])
 
     def test_state_publication_waits_for_dry_run_or_authorized_live_boundary(self):
         workflow = self.workflow()
