@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "recovery_id": "GAC-RECOVERY-20261014-001",
+  "repository": "neviarrawlinson/governance-as-code",
+  "branch": "main",
+  "control_id": "ACP-001-03",
+  "preview_run_id": "38505894933",
+  "preview_artifact_id": "11867878687",
+  "source_commit": "9843ed7f73110feeede9b06fe1c221cef9e155dd",
+  "evaluation_date": "2026-10-14",
+  "candidate_sha256": "b19e8f6cdcf97704f69db82f0aba9e78cffd975720fe6ceed55aa45d3a4fc19d",
+  "manifest_sha256": "f1a7cb24e7691c2ddcdbbac29dcd5e2e924edddf97b39406a5d5a47e4cc63d69",
+  "approver": "neviarrawlinson",
+  "approved_at": "2026-10-14",
+  "valid_until": "2026-10-16",
+  "reason": "Neviar Rawlinson approved this exact candidate with disclosed self-review. Establish a verified current-state baseline after unavailable trusted history; preserve original lineage and record the missing interval as UNKNOWN. USR-004 remains FAIL / VERIFIED / ESCALATE. This authorization does not remediate MFA, accept risk, or close issue #3.",
+  "history_gap_acknowledged": true,
+  "review_mode": "disclosed_self_review",
+  "related_issue": 3
+}
