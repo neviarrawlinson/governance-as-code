@@ -510,7 +510,7 @@ class WorkflowDiagnosticTests(unittest.TestCase):
         self.assertEqual({"actions": "read", "contents": "read", "issues": "read"}, workflow["permissions"])
         self.assertEqual({"actions": "read", "contents": "read", "issues": "write"}, live["permissions"])
         self.assertIn("github.event_name == 'workflow_dispatch'", live["if"])
-        self.assertIn("inputs.live_issue_workflow == true", live["if"])
+        self.assertIn("needs.assurance.outputs.live_authorized == 'true'", live["if"])
         self.assertEqual({"actions": "read", "contents": "read"}, publication["permissions"])
         self.assertIn("needs.assurance.outputs.assurance_status", publication["if"])
         approved = {

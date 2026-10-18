@@ -14,11 +14,19 @@ on:
       - .github/workflows/governance-assurance.yml
   workflow_dispatch:
     inputs:
-      live_issue_workflow:
-        description: Execute the authorized live GitHub Issues workflow
+      execution_mode:
+        description: "Issue operations: preview plans changes; live can create, comment on, or close issues"
         required: true
-        type: boolean
-        default: false
+        type: choice
+        options:
+          - preview
+          - live
+        default: preview
+      live_confirmation:
+        description: "For live mode only, type EXECUTE LIVE ISSUE CHANGES after reviewing the plan"
+        required: false
+        type: string
+        default: ""
   schedule:
     - cron: "0 6 * * 1"
 
@@ -34,6 +42,8 @@ concurrency:
 jobs:
   assurance:
     outputs:
+      live_requested: ${{ steps.execution-mode.outputs.live_requested }}
+      live_authorized: ${{ steps.execution-mode.outputs.live_authorized }}
       assurance_status: ${{ steps.assurance-pipeline.outputs.assurance_status }}
       workflow_plan_ready: ${{ steps.github-dry-run.outcome == 'success' }}
       runtime_artifact_id: ${{ steps.runtime-artifact-upload.outputs.artifact-id }}
@@ -47,6 +57,45 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Validate execution mode
+        id: execution-mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EXECUTION_MODE: ${{ inputs.execution_mode }}
+          LIVE_CONFIRMATION: ${{ inputs.live_confirmation }}
+        run: |
+          live_requested=false
+          live_authorized=false
+          mode=preview
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            mode="$EXECUTION_MODE"
+            case "$mode" in
+              preview) ;;
+              live)
+                live_requested=true
+                if [ "$LIVE_CONFIRMATION" = 'EXECUTE LIVE ISSUE CHANGES' ]; then
+                  live_authorized=true
+                fi
+                ;;
+              *) mode=invalid ;;
+            esac
+          fi
+          echo "live_requested=$live_requested" >> "$GITHUB_OUTPUT"
+          echo "live_authorized=$live_authorized" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Issue execution mode'
+            echo "Mode: $mode"
+            echo "Live issue changes authorized: $live_authorized"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$mode" = invalid ]; then
+            echo '::error::Choose preview or live explicitly.'
+            exit 1
+          fi
+          if [ "$live_requested" = true ] && [ "$live_authorized" != true ]; then
+            echo '::error::Live mode requires the exact confirmation: EXECUTE LIVE ISSUE CHANGES'
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -123,7 +172,7 @@ jobs:
     needs: assurance
     outputs:
       executed_operations: ${{ steps.live-operation-metadata.outputs.operations }}
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.live_issue_workflow == true && needs.assurance.outputs.issue_operations_allowed == 'true' && needs.assurance.outputs.workflow_plan_ready == 'true' && (needs.assurance.outputs.assurance_status == 'verified' || needs.assurance.outputs.assurance_status == 'integrity_halt') }}
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && needs.assurance.outputs.live_authorized == 'true' && needs.assurance.outputs.issue_operations_allowed == 'true' && needs.assurance.outputs.workflow_plan_ready == 'true' && (needs.assurance.outputs.assurance_status == 'verified' || needs.assurance.outputs.assurance_status == 'integrity_halt') }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -154,7 +203,7 @@ jobs:
         id: live-execution
         env:
           GH_TOKEN: ${{ github.token }}
-          LIVE_ISSUE_WORKFLOW: ${{ inputs.live_issue_workflow }}
+          LIVE_ISSUE_WORKFLOW: ${{ needs.assurance.outputs.live_authorized }}
         run: python -m integrations.github.cli --live --output generated-assurance/executed-github-issue-operations.json
 
       - name: Surface executed operation metadata
@@ -209,7 +258,7 @@ jobs:
           python -m automation.state_publication \
             --assurance-status "${{ needs.assurance.outputs.assurance_status }}" \
             --event-name "${{ github.event_name }}" \
-            --live-requested "${{ inputs.live_issue_workflow == true }}" \
+            --live-requested "${{ needs.assurance.outputs.live_authorized == 'true' }}" \
             --live-job-result "${{ needs.live-governance-workflow.result }}" \
             --trusted-history-publication-allowed "${{ needs.assurance.outputs.publication_allowed }}" \
             --events-directory generated-assurance/events \
@@ -276,8 +325,8 @@ jobs:
             --trigger "${{ github.event_name }}" \
             --branch "${{ github.ref_name }}" \
             --commit-sha "${{ github.sha }}" \
-            --live-requested "${{ github.event_name == 'workflow_dispatch' && inputs.live_issue_workflow == true }}" \
-            --live-authorized "${{ github.event_name == 'workflow_dispatch' && inputs.live_issue_workflow == true }}" \
+            --live-requested "${{ needs.assurance.outputs.live_requested == 'true' }}" \
+            --live-authorized "${{ needs.assurance.outputs.live_authorized == 'true' }}" \
             --live-job-status "${{ needs.live-governance-workflow.result }}" \
             --executed-operations '${{ needs.live-governance-workflow.outputs.executed_operations }}' \
             --publication-status "${{ needs.trusted-state-publication.outputs.state_ready == 'true' && needs.trusted-state-publication.outputs.upload_status == 'success' && 'PROMOTED' || (needs.trusted-state-publication.outputs.publication_decision == 'DO_NOT_PROMOTE' && 'WITHHELD' || (needs.trusted-state-publication.outputs.publication_decision == 'PROMOTE' && 'FAILED' || 'NOT_REACHED')) }}" \
