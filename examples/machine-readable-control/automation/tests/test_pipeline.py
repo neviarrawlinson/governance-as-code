@@ -349,15 +349,16 @@ class WorkflowConfigurationTests(unittest.TestCase):
             triggers["push"]["paths"],
         )
 
-    def test_manual_live_input_is_boolean_and_defaults_to_false(self):
+    def test_manual_mode_is_explicit_and_defaults_to_preview(self):
         workflow = self.workflow()
         live_input = workflow["on"]["workflow_dispatch"]["inputs"][
-            "live_issue_workflow"
+            "execution_mode"
         ]
 
-        self.assertEqual("boolean", live_input["type"])
+        self.assertEqual("choice", live_input["type"])
         self.assertEqual("true", live_input["required"])
-        self.assertEqual("false", live_input["default"])
+        self.assertEqual("preview", live_input["default"])
+        self.assertEqual(["preview", "live"], live_input["options"])
 
     def test_workflow_uses_bounded_read_permissions_and_artifact_retention(self):
         workflow = self.workflow()
@@ -510,7 +511,7 @@ class WorkflowConfigurationTests(unittest.TestCase):
             "automation.state_publication", publication_step["run"]
         )
         self.assertIn("github.event_name", publication_step["run"])
-        self.assertIn("inputs.live_issue_workflow", publication_step["run"])
+        self.assertIn("needs.assurance.outputs.live_authorized", publication_step["run"])
         self.assertIn(
             "needs.live-governance-workflow.result", publication_step["run"]
         )
@@ -554,7 +555,7 @@ class WorkflowConfigurationTests(unittest.TestCase):
         self.assertIn(
             "github.event_name == 'workflow_dispatch'", live_job["if"]
         )
-        self.assertIn("inputs.live_issue_workflow == true", live_job["if"])
+        self.assertIn("needs.assurance.outputs.live_authorized == 'true'", live_job["if"])
         self.assertNotIn("push", live_job["if"])
         self.assertNotIn("schedule", live_job["if"])
 
@@ -562,7 +563,7 @@ class WorkflowConfigurationTests(unittest.TestCase):
         workflow = self.workflow()
         live_job = workflow["jobs"]["live-governance-workflow"]
 
-        self.assertIn("inputs.live_issue_workflow == true", live_job["if"])
+        self.assertIn("needs.assurance.outputs.live_authorized == 'true'", live_job["if"])
         self.assertNotIn("inputs.live_issue_workflow", live_job.get("env", {}))
 
     def test_authorized_manual_job_has_bounded_write_permission_and_uses_live_cli(self):
@@ -580,7 +581,7 @@ class WorkflowConfigurationTests(unittest.TestCase):
             live_job["permissions"],
         )
         self.assertIn("integrations.github.cli --live", live_step["run"])
-        self.assertEqual("${{ inputs.live_issue_workflow }}", live_step["env"]["LIVE_ISSUE_WORKFLOW"])
+        self.assertEqual("${{ needs.assurance.outputs.live_authorized }}", live_step["env"]["LIVE_ISSUE_WORKFLOW"])
         write_jobs = [
             name
             for name, job in workflow["jobs"].items()
