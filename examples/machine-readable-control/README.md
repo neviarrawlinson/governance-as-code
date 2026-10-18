@@ -229,6 +229,11 @@ The JSON and Markdown files are uploaded as the separate `synthetic-governance-l
 
 ## What We Will Build
 
+Scheduled assurance failures and missing weekly successes can be tracked through
+the separate [monitoring workflow and review procedure](automation/MONITORING.md).
+It maintains one human-reviewed monitoring issue and does not change control
+decisions or trusted state.
+
 1. Define `ACP-001-03` in a structured YAML format.
 2. Map the structured control back to the human-readable policy.
 3. Define how the control can be validated.
