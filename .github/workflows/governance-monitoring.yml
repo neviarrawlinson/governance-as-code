@@ -1,0 +1,66 @@
+name: Governance Assurance Monitoring
+
+on:
+  workflow_run:
+    workflows: [Governance Assurance Demonstration]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Preview the monitoring report or enable monitoring issue updates'
+        type: choice
+        options: [preview, live]
+        default: preview
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: governance-assurance-monitoring
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'schedule')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    defaults:
+      run:
+        working-directory: examples/machine-readable-control
+    steps:
+      - name: Check out trusted main source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+      - name: Check scheduled assurance health
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MONITOR_LIVE: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'live') || (github.event_name != 'workflow_dispatch' && vars.GAC_MONITORING_ENABLED == 'true') }}
+        run: |
+          arguments=()
+          if [ "$MONITOR_LIVE" = true ]; then arguments+=(--live); fi
+          python -m automation.monitoring "${arguments[@]}"
+      - name: Retain monitoring report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: governance-monitoring-${{ github.run_id }}
+          path: examples/machine-readable-control/generated-monitoring/
+          retention-days: 30
+          if-no-files-found: warn
